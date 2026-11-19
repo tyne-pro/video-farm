@@ -11,7 +11,7 @@
 use serde::Serialize;
 use std::collections::VecDeque;
 use std::fs;
-use std::io::{BufRead, BufReader, Read};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{SocketAddr, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -22,7 +22,12 @@ use tauri::{AppHandle, Emitter, Manager, RunEvent};
 use tauri_plugin_deep_link::DeepLinkExt;
 use tauri_plugin_opener::OpenerExt;
 
-const PORTAL: &str = "https://cp.tyne.pro";
+const PORTAL_DEFAULT: &str = "https://cp.tyne.pro";
+
+/// The cabinet address (FARM_PORTAL overrides it for testing)
+fn portal() -> String {
+    std::env::var("FARM_PORTAL").unwrap_or_else(|_| PORTAL_DEFAULT.to_string())
+}
 const PORT: u16 = 4747;
 const MODEL: &str = "medium";
 const LOG_LINES: usize = 400;
@@ -43,9 +48,21 @@ struct Status {
     phase: String,
     running: bool,
     connected: bool,
+    me: serde_json::Value,
     data: String,
     version: String,
     log: Vec<String>,
+}
+
+/** GET to the local generator (plain HTTP/1.0 on 127.0.0.1), JSON body or Null */
+fn local_get(path: &str) -> serde_json::Value {
+    let addr: SocketAddr = ([127, 0, 0, 1], PORT).into();
+    let Ok(mut stream) = TcpStream::connect_timeout(&addr, Duration::from_millis(400)) else { return serde_json::Value::Null };
+    let _ = stream.set_read_timeout(Some(Duration::from_secs(20)));
+    if stream.write_all(format!("GET {path} HTTP/1.0\r\nHost: 127.0.0.1\r\n\r\n").as_bytes()).is_err() { return serde_json::Value::Null; }
+    let mut raw = String::new();
+    if stream.read_to_string(&mut raw).is_err() { return serde_json::Value::Null; }
+    raw.split_once("\r\n\r\n").and_then(|(_, body)| serde_json::from_str(body).ok()).unwrap_or(serde_json::Value::Null)
 }
 
 fn exe(name: &str) -> String {
@@ -96,7 +113,7 @@ fn node_command(app: &AppHandle, script: &Path, args: &[&str]) -> Command {
     cmd.arg(script).args(args)
         .current_dir(&data)
         .env("FARM_DATA", &data)
-        .env("FARM_PORTAL", PORTAL)
+        .env("FARM_PORTAL", portal())
         .env("FFMPEG_PATH", bin.join(exe("ffmpeg")))
         .env("FFPROBE_PATH", bin.join(exe("ffprobe")))
         .env("NODE_PATH", generator_dir(app).join("node_modules"))
@@ -114,6 +131,19 @@ fn node_command(app: &AppHandle, script: &Path, args: &[&str]) -> Command {
         cmd.creation_flags(0x0800_0000); // no console window
     }
     cmd
+}
+
+/** Technical output goes to a file for support, never to the window */
+fn pipe_to_file<R: Read + Send + 'static>(reader: R) {
+    thread::spawn(move || {
+        let path = data_dir().join(".cache").join("errors.log");
+        let _ = fs::create_dir_all(path.parent().unwrap());
+        if let Ok(mut file) = fs::OpenOptions::new().create(true).append(true).open(path) {
+            for line in BufReader::new(reader).lines().map_while(Result::ok) {
+                let _ = writeln!(file, "{line}");
+            }
+        }
+    });
 }
 
 fn pipe<R: Read + Send + 'static>(farm: Farm, app: AppHandle, reader: R) {
@@ -134,12 +164,14 @@ fn start(app: AppHandle, farm: Farm) {
     thread::spawn(move || {
         let data = data_dir();
         let _ = fs::create_dir_all(&data);
-        let _ = fs::write(data.join(".portal"), PORTAL);
+        let _ = fs::write(data.join(".portal"), portal());
+        // Folders the user puts own files into (stickers, music, fonts) and the finished clips
+        for dir in ["Готово", "stickers", "music", "fonts"] { let _ = fs::create_dir_all(data.join(dir)); }
         let gen = generator_dir(&app);
         let marker = data.join(".cache").join(format!(".prepared-{MODEL}"));
 
         if port_open() {
-            push(&farm, &app, "Генератор уже запущено на цьому комп’ютері (порт 4747).".into());
+            push(&farm, &app, "Генератор уже працює".into());
             set_phase(&farm, &app, "running");
             farm.0.lock().unwrap().starting = false;
             return;
@@ -147,20 +179,20 @@ fn start(app: AppHandle, farm: Farm) {
 
         if !marker.exists() {
             set_phase(&farm, &app, "preparing");
-            push(&farm, &app, "Перший запуск: качаю модель розпізнавання мови й браузер для рендера (~1.7 ГБ, один раз).".into());
+            push(&farm, &app, "Перший запуск: готуємо програму (один раз, ~1.7 ГБ, 5–15 хвилин)".into());
             match node_command(&app, &gen.join("scripts").join("prepare.mjs"), &[MODEL]).spawn() {
                 Ok(mut child) => {
                     if let Some(out) = child.stdout.take() { pipe(farm.clone(), app.clone(), out); }
-                    if let Some(err) = child.stderr.take() { pipe(farm.clone(), app.clone(), err); }
+                    if let Some(err) = child.stderr.take() { pipe_to_file(err); }
                     let ok = child.wait().map(|s| s.success()).unwrap_or(false);
                     if ok {
                         let _ = fs::create_dir_all(marker.parent().unwrap());
                         let _ = fs::write(&marker, "ok");
                     } else {
-                        push(&farm, &app, "Підготовка не завершилася. Генератор усе одно запуститься й докачає потрібне під час першого ролика.".into());
+                        push(&farm, &app, "Підготовку не завершено: решту програма докачає під час першого ролика".into());
                     }
                 }
-                Err(e) => push(&farm, &app, format!("Не вдалося запустити підготовку: {e}")),
+                Err(_) => push(&farm, &app, "Не вдалося почати підготовку. Натисніть «Перезапустити»".into()),
             }
         }
 
@@ -168,7 +200,7 @@ fn start(app: AppHandle, farm: Farm) {
         match node_command(&app, &gen.join("server.mjs"), &[]).spawn() {
             Ok(mut child) => {
                 if let Some(out) = child.stdout.take() { pipe(farm.clone(), app.clone(), out); }
-                if let Some(err) = child.stderr.take() { pipe(farm.clone(), app.clone(), err); }
+                if let Some(err) = child.stderr.take() { pipe_to_file(err); }
                 farm.0.lock().unwrap().child = Some(child);
                 for _ in 0..60 {
                     if port_open() { break; }
@@ -176,8 +208,8 @@ fn start(app: AppHandle, farm: Farm) {
                 }
                 set_phase(&farm, &app, if port_open() { "running" } else { "error" });
             }
-            Err(e) => {
-                push(&farm, &app, format!("Не вдалося запустити генератор: {e}"));
+            Err(_) => {
+                push(&farm, &app, "Генератор не запустився. Натисніть «Перезапустити»".into());
                 set_phase(&farm, &app, "error");
             }
         }
@@ -195,7 +227,8 @@ fn watch(app: AppHandle, farm: Farm) {
         if let Ok(Some(code)) = child.try_wait() {
             s.child = None;
             drop(s);
-            push(&farm, &app, format!("Генератор зупинився ({code})."));
+            let _ = code;
+            push(&farm, &app, "Генератор зупинився. Натисніть «Перезапустити»".into());
             set_phase(&farm, &app, "stopped");
             return;
         }
@@ -224,12 +257,12 @@ fn handle_link(app: &AppHandle, url: &str) {
     let farm = app.state::<Farm>().inner().clone();
     match save_key(key) {
         Ok(()) => {
-            push(&farm, app, "Кабінет підключено.".into());
+            push(&farm, app, "Кабінет підключено".into());
             let _ = app.emit("farm-connected", true);
             stop(&farm);
             start(app.clone(), farm);
         }
-        Err(_) => push(&farm, app, "Посилання підключення пошкоджене. Натисніть «Підключити кабінет» ще раз.".into()),
+        Err(_) => push(&farm, app, "Посилання підключення пошкоджене. Натисніть «Підключити кабінет» ще раз".into()),
     }
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.unminimize();
@@ -239,17 +272,34 @@ fn handle_link(app: &AppHandle, url: &str) {
 
 #[tauri::command]
 fn farm_status(app: AppHandle, farm: tauri::State<Farm>) -> Status {
-    let s = farm.0.lock().unwrap();
     let running = port_open();
+    let status = if running { local_get("/api/status") } else { serde_json::Value::Null };
+    let s = farm.0.lock().unwrap();
     let phase = if running { "running".to_string() } else { s.phase.clone() };
+    // Generator lines (clips) after the app's own lines
+    let mut log: Vec<String> = s.log.iter().cloned().collect();
+    if let Some(lines) = status.get("log").and_then(|v| v.as_array()) {
+        log = lines.iter().filter_map(|v| v.as_str().map(String::from)).collect();
+        for own in s.log.iter() { if !log.contains(own) { log.insert(0, own.clone()); } }
+    }
     Status {
         phase,
         running,
         connected: data_dir().join(".portal-key").exists(),
+        me: status.get("me").cloned().unwrap_or(serde_json::Value::Null),
         data: data_dir().display().to_string(),
         version: app.package_info().version.to_string(),
-        log: s.log.iter().cloned().collect(),
+        log,
     }
+}
+
+#[tauri::command]
+fn farm_disconnect(app: AppHandle, farm: tauri::State<Farm>) {
+    let _ = fs::remove_file(data_dir().join(".portal-key"));
+    let farm = farm.inner().clone();
+    push(&farm, &app, "Кабінет відключено".into());
+    stop(&farm);
+    start(app, farm);
 }
 
 #[tauri::command]
@@ -275,8 +325,9 @@ fn open_place(app: AppHandle, place: String) -> Result<(), String> {
 #[tauri::command]
 fn open_link(app: AppHandle, path: String) -> Result<(), String> {
     // Only our own pages and the code repository
-    let url = if path.starts_with('/') { format!("{PORTAL}{path}") } else { path };
-    if !(url.starts_with(PORTAL) || url.starts_with("https://tyne.pro") || url.starts_with("https://github.com/tyne-pro/") || url.starts_with("https://claude.ai/")) {
+    let base = portal();
+    let url = if path.starts_with('/') { format!("{base}{path}") } else { path };
+    if !(url.starts_with(&base) || url.starts_with("https://tyne.pro") || url.starts_with("https://github.com/tyne-pro/") || url.starts_with("https://claude.ai/")) {
         return Err("blocked".into());
     }
     app.opener().open_url(url, None::<&str>).map_err(|e| e.to_string())
@@ -296,7 +347,7 @@ fn main() {
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_opener::init())
         .manage(farm.clone())
-        .invoke_handler(tauri::generate_handler![farm_status, farm_restart, open_place, open_link])
+        .invoke_handler(tauri::generate_handler![farm_status, farm_restart, farm_disconnect, open_place, open_link])
         .setup(move |app| {
             #[cfg(any(windows, target_os = "linux"))]
             {

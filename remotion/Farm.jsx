@@ -1,13 +1,16 @@
 // ============================================================================
-// Композиция ролика: сплит-скрин (голова + планшет) или
-// разговорное видео, хук по 1–2 слова, субтитры квадратом с акцентами,
-// заголовки тем, поп-ин мемы, зумы, emoji roller и звук.
+// Композиция ролика 1080×1920. Режимы:
+//   cut    — одно видео автора (вертикальное на весь кадр, горизонтальное — по центру
+//            на размытом фоне), паузы вырезаны, субтитры по речи, зумы
+//   clips / script — экраны из клипов и картинок (или фона) с текстом по экранам
+// Общее: хук по 1–2 слова, субтитры с акцентами, заголовки тем, стикеры, ролер, звук,
+// водяной знак демо, свой шрифт (Pro).
 // ============================================================================
 
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import {
   AbsoluteFill, Audio, Easing, Img, OffthreadVideo, Sequence,
-  interpolate, useCurrentFrame, useVideoConfig,
+  continueRender, delayRender, interpolate, useCurrentFrame, useVideoConfig,
 } from 'remotion'
 import { loadFont as loadMontserrat } from '@remotion/google-fonts/Montserrat'
 import { loadFont as loadUnbounded } from '@remotion/google-fonts/Unbounded'
@@ -28,44 +31,24 @@ const BUTTER = '#FBE7A1'
 const FPS = 30
 const f = (sec) => Math.round(sec * FPS)
 
-// --- Раскладки -----------------------------------------------------------------
+// --- Раскладка ------------------------------------------------------------------
 
-const LAYOUTS = {
-  vertical: {
-    head: { left: 60, top: 80, width: 960, height: 860, radius: 40 },
-    tablet: { left: 60, top: 1250, width: 960, height: 540, radius: 28 },
-    captions: { left: 70, top: 955, width: 940, height: 280, align: 'varies', size: 60, lineSize: 84, blockWidth: 760 },
-    // Мемы — поверх планшета , субтитры остаются видны
-    meme: { cx: 540, cy: 1460, max: 600 },
-    hookMeme: { cx: 540, cy: 1460, max: 560 },
-    hook: { left: 80, top: 160, width: 920, height: 700, size: 108 },
-    heading: { cx: 540, top: 1270, size: 64 },
-    roller: { top: 1800, size: 96 },
-  },
-  horizontal: {
-    head: { left: 40, top: 40, width: 600, height: 1000, radius: 36 },
-    tablet: { left: 680, top: 345, width: 1200, height: 675, radius: 24 },
-    captions: { left: 690, top: 40, width: 1180, height: 290, align: 'left', size: 50, lineSize: 76, blockWidth: 640 },
-    meme: { cx: 1180, cy: 560, max: 520 },
-    hookMeme: { cx: 340, cy: 600, max: 480 },
-    hook: { left: 700, top: 360, width: 1160, height: 640, size: 112 },
-    heading: { cx: 1280, top: 370, size: 64 },
-    roller: { top: 1000, size: 72 },
-  },
-  talking: {
-    head: { left: 0, top: 0, width: 1080, height: 1920, radius: 0 },
-    tablet: null,
-    captions: { left: 90, top: 1180, width: 900, height: 300, align: 'center', size: 62, lineSize: 88, blockWidth: 820 },
-    // Лицо в разговорном кадре обычно на 30–55% высоты: мем — выше головы,
-    // под шапкой TikTok, заголовок — над субтитрами
-    meme: { cx: 540, cy: 400, max: 460 },
-    hookMeme: { cx: 540, cy: 1380, max: 560 },
-    hook: { left: 80, top: 260, width: 920, height: 760, size: 116 },
-    // Низ заголовка над субтитрами: длинный в две строки растёт вверх
-    heading: { cx: 540, bottom: 1920 - 1160, size: 72 },
-    roller: { top: 1770, size: 100 },
-  },
+const L = {
+  captions: { left: 90, top: 1180, width: 900, height: 300, align: 'center', size: 62, lineSize: 88, blockWidth: 820 },
+  // Лицо в кадре обычно на 30–55% высоты: стикер — выше, под шапкой TikTok
+  meme: { cx: 540, cy: 420, max: 460 },
+  hookMeme: { cx: 540, cy: 1400, max: 520 },
+  hook: { left: 80, top: 260, width: 920, height: 760, size: 116 },
+  heading: { cx: 540, bottom: 1920 - 1160, size: 72 },
+  roller: { top: 1770, size: 100 },
 }
+// Экраны с текстом: текст по центру крупно
+const LS = {
+  ...L,
+  captions: { left: 80, top: 760, width: 920, height: 520, align: 'center', size: 76, lineSize: 92, blockWidth: 900 },
+  meme: { cx: 540, cy: 1460, max: 480 },
+}
+const BACKGROUNDS = ['#2a2418', '#1c2430', '#2b1d27', '#1d2a22', '#2c2516', '#221e30']
 
 // --- Зум головы ------------------------------------------------------------------
 
@@ -85,22 +68,60 @@ function zoomAt(frame, zooms) {
   return 1
 }
 
-const Frame = ({ box, src, zoom = 1, origin = '50% 35%' }) => (
-  <div style={{
-    position: 'absolute', left: box.left, top: box.top, width: box.width, height: box.height,
-    borderRadius: box.radius, overflow: 'hidden', backgroundColor: '#000',
-  }}>
+/** Видео автора: вертикальное — на весь кадр, горизонтальное — по центру на размытом фоне */
+const MainVideo = ({ src, zoom, landscape }) => (
+  <AbsoluteFill style={{ backgroundColor: '#000', overflow: 'hidden' }}>
+    {landscape && (
+      <OffthreadVideo src={src} muted style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', filter: 'blur(40px) brightness(0.55)', transform: 'scale(1.2)' }} />
+    )}
     <OffthreadVideo
       src={src}
       muted
-      style={{ width: '100%', height: '100%', objectFit: 'cover', transform: `scale(${zoom})`, transformOrigin: origin }}
+      style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: landscape ? 'contain' : 'cover', transform: `scale(${zoom})`, transformOrigin: landscape ? '50% 50%' : '50% 35%' }}
     />
-  </div>
+  </AbsoluteFill>
 )
+
+/** Экран из клипа, картинки (медленный наезд) или цветного фона */
+const Screen = ({ screen, index }) => {
+  const frame = useCurrentFrame()
+  const total = Math.max(1, f(screen.dur))
+  const k = interpolate(frame, [0, total], [1, 1.08], { extrapolateRight: 'clamp' })
+  const fade = interpolate(frame, [0, 4], [0.4, 1], { extrapolateRight: 'clamp' })
+  const m = screen.media
+  return (
+    <AbsoluteFill style={{ backgroundColor: '#000', opacity: fade }}>
+      {m?.kind === 'video' && <OffthreadVideo src={m.src} muted style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
+      {m?.kind === 'image' && <Img src={m.src} style={{ width: '100%', height: '100%', objectFit: 'cover', transform: `scale(${k})` }} />}
+      {!m && <AbsoluteFill style={{ background: `radial-gradient(120% 80% at 50% 30%, ${BACKGROUNDS[index % BACKGROUNDS.length]} 0%, #121110 65%, #0a0a0a 100%)` }} />}
+      {m && <AbsoluteFill style={{ background: 'linear-gradient(180deg, rgba(0,0,0,0.15) 0%, rgba(0,0,0,0.45) 45%, rgba(0,0,0,0.55) 70%, rgba(0,0,0,0.2) 100%)' }} />}
+    </AbsoluteFill>
+  )
+}
+
+/** Демо: водяной знак в углу и внизу */
+const Watermark = () => (
+  <>
+    <div style={{ position: 'absolute', right: 36, top: 120, padding: '10px 18px', borderRadius: 999, background: 'rgba(0,0,0,0.45)', color: 'rgba(255,255,255,0.85)', fontFamily: montserrat, fontWeight: 600, fontSize: 30 }}>tyne.pro · демо</div>
+    <div style={{ position: 'absolute', left: 0, right: 0, bottom: 210, textAlign: 'center', color: 'rgba(255,255,255,0.35)', fontFamily: unbounded, fontWeight: 700, fontSize: 44, letterSpacing: 2 }}>TYNE.PRO</div>
+  </>
+)
+
+/** Свой шрифт (Pro) из папки fonts */
+function useCustomFont(src) {
+  const [family, setFamily] = useState(null)
+  const [handle] = useState(() => (src ? delayRender('font') : null))
+  useEffect(() => {
+    if (!src) return
+    const face = new FontFace('FarmCustom', `url(${src})`)
+    face.load().then((loaded) => { document.fonts.add(loaded); setFamily('FarmCustom') }).catch(() => {}).finally(() => continueRender(handle))
+  }, [src, handle])
+  return family
+}
 
 // --- Хук ---------------------------------------------------------------------------
 
-const Hook = ({ hook, box, color }) => {
+const Hook = ({ hook, box, color, font }) => {
   const frame = useCurrentFrame()
   if (frame > f(hook.end)) return null
   const fadeOut = interpolate(frame, [f(hook.end) - 6, f(hook.end)], [1, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
@@ -118,7 +139,7 @@ const Hook = ({ hook, box, color }) => {
         const italic = i % 3 === 1
         return (
           <div key={i} style={{
-            fontFamily: italic ? playfair : unbounded,
+            fontFamily: italic ? playfair : (font || unbounded),
             fontStyle: italic ? 'italic' : 'normal',
             fontWeight: 700,
             fontSize: italic ? box.size * 0.9 : box.size,
@@ -127,6 +148,7 @@ const Hook = ({ hook, box, color }) => {
             textAlign: 'center',
             transform: `scale(${k})`,
             letterSpacing: italic ? 0 : -1,
+            textShadow: color === WHITE ? '0 3px 18px rgba(0,0,0,0.5)' : 'none',
           }}>
             {italic ? chunk.join(' ').toLowerCase() : chunk.join(' ')}
           </div>
@@ -138,7 +160,7 @@ const Hook = ({ hook, box, color }) => {
 
 // --- Субтитры -------------------------------------------------------------------
 
-const Captions = ({ captions, box, color, hookEnd }) => {
+const Captions = ({ captions, box, color, hookEnd, font }) => {
   const frame = useCurrentFrame()
   const t = frame / FPS
   if (t < hookEnd) return null
@@ -158,12 +180,13 @@ const Captions = ({ captions, box, color, hookEnd }) => {
         textAlign: align,
         transform: `scale(${appear})`,
         transformOrigin: `${align} center`,
-        fontFamily: line ? unbounded : montserrat,
+        fontFamily: font || (line ? unbounded : montserrat),
         fontWeight: line ? 700 : 600,
         fontSize: line ? box.lineSize : box.size,
         lineHeight: 1.15,
         color,
         textTransform: line ? 'uppercase' : 'none',
+        textShadow: color === WHITE ? '0 2px 14px rgba(0,0,0,0.55)' : 'none',
       }}>
         {block.words.map((w, i) => {
           const shown = t >= w.start - 0.05
@@ -184,14 +207,14 @@ const Captions = ({ captions, box, color, hookEnd }) => {
 
 // --- Заголовки тем ------------------------------------------------------------
 
-const Heading = ({ text, box, color }) => {
+const Heading = ({ text, box, color, font }) => {
   const frame = useCurrentFrame()
   const y = interpolate(frame, [0, 5], [30, 0], { extrapolateRight: 'clamp', easing: Easing.out(Easing.cubic) })
   const o = interpolate(frame, [0, 3, f(1.8) - 5, f(1.8)], [0, 1, 1, 0], { extrapolateRight: 'clamp' })
   return (
     <div style={{
       position: 'absolute', left: box.cx - 520, width: 1040, top: box.top, bottom: box.bottom,
-      textAlign: 'center', fontFamily: unbounded, fontWeight: 700, fontSize: box.size,
+      textAlign: 'center', fontFamily: font || unbounded, fontWeight: 700, fontSize: box.size,
       lineHeight: 1.05, color, opacity: o, transform: `translateY(${y}px)`, textTransform: 'uppercase',
     }}>
       {text}
@@ -248,29 +271,30 @@ const Roller = ({ emoji, rollerSrc, box, width }) => {
 // --- Композиция ------------------------------------------------------------------
 
 export const Farm = (props) => {
-  const { format, plan, headSrc, tabletSrc, voiceSrc, musicSrc, musicVolume = 0.03, sfx, memes, captionColor = WHITE, emoji = '🍓', rollerSrc, backgroundSrc } = props
+  const { mode = 'cut', plan, videoSrc, voiceSrc, landscape, screens = [], musicSrc, musicVolume = 0.05, sfx, memes, captionColor = WHITE, emoji = '', rollerSrc, fontSrc, watermark } = props
   const frame = useCurrentFrame()
   const { width } = useVideoConfig()
+  const font = useCustomFont(fontSrc)
   if (!plan) return <AbsoluteFill style={{ backgroundColor: '#000' }} />
-  const L = LAYOUTS[format] || LAYOUTS.vertical
-  const zoom = zoomAt(frame, plan.zooms)
-  const overVideo = format === 'talking'
-  const textColor = overVideo ? captionColor : WHITE
+  const slides = mode !== 'cut'
+  const box = slides ? LS : L
+  const zoom = slides ? 1 : zoomAt(frame, plan.zooms || [])
+  const textColor = slides || landscape ? WHITE : captionColor
 
   return (
-    <AbsoluteFill style={{ background: 'radial-gradient(120% 80% at 50% 30%, #2a2418 0%, #121110 60%, #0a0a0a 100%)' }}>
-      {backgroundSrc && format !== 'talking' && (
-        <Img src={backgroundSrc} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
-      )}
+    <AbsoluteFill style={{ backgroundColor: '#0a0a0a' }}>
+      {!slides && videoSrc && <MainVideo src={videoSrc} zoom={zoom} landscape={landscape} />}
+      {slides && screens.map((sc, i) => (
+        <Sequence key={`sc${i}`} from={f(sc.start)} durationInFrames={Math.max(1, f(sc.dur))} layout="none">
+          <Screen screen={sc} index={i} />
+        </Sequence>
+      ))}
 
-      <Frame box={L.head} src={headSrc} zoom={zoom} />
-      {L.tablet && tabletSrc && <Frame box={L.tablet} src={tabletSrc} origin="50% 50%" />}
-
-      <Captions captions={plan.captions} box={L.captions} color={textColor} hookEnd={plan.hook.end} />
+      <Captions captions={plan.captions} box={box.captions} color={textColor} hookEnd={plan.hook.end} font={font} />
 
       {plan.headings.map((h, i) => (
         <Sequence key={`h${i}`} from={f(h.start)} durationInFrames={f(h.dur)} layout="none">
-          <Heading text={h.text} box={L.heading} color={WHITE} />
+          <Heading text={h.text} box={box.heading} color={WHITE} font={font} />
         </Sequence>
       ))}
 
@@ -279,17 +303,17 @@ export const Farm = (props) => {
         if (!meme) return null
         return (
           <Sequence key={`m${i}`} from={f(m.start)} durationInFrames={Math.max(8, f(m.dur))} layout="none">
-            {/* Мем рядом с хуком — сбоку, чтобы не перекрывать заголовок */}
-            <Meme meme={meme} box={m.start < plan.hook.end ? L.hookMeme : L.meme} durFrames={Math.max(8, f(m.dur))} />
+            <Meme meme={meme} box={m.start < plan.hook.end ? box.hookMeme : box.meme} durFrames={Math.max(8, f(m.dur))} />
           </Sequence>
         )
       })}
 
-      <Hook hook={plan.hook} box={L.hook} color={overVideo ? captionColor : WHITE} />
+      <Hook hook={plan.hook} box={box.hook} color={textColor} font={font} />
 
-      <Roller emoji={emoji} rollerSrc={rollerSrc} box={L.roller} width={width} />
+      {(emoji || rollerSrc) && <Roller emoji={emoji} rollerSrc={rollerSrc} box={box.roller} width={width} />}
+      {watermark && <Watermark />}
 
-      <Audio src={voiceSrc} volume={1} />
+      {voiceSrc && <Audio src={voiceSrc} volume={1} />}
       {musicSrc && <Audio src={musicSrc} loop volume={musicVolume} />}
       {plan.sfx.map((s, i) => (
         <Sequence key={`s${i}`} from={f(s.t)} durationInFrames={f(0.5)} layout="none">

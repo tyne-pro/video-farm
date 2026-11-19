@@ -1,6 +1,6 @@
 {
   "name": "tyne-video-farm",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
   "description": "Локальный автомонтаж коротких видео (Remotion + whisper.cpp + Claude Code)",
