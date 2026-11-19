@@ -10,7 +10,9 @@ import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
 import { spawn } from 'node:child_process'
-import { runPipeline, renderJob, ROOT, DATA, Cancelled } from './lib/pipeline.mjs'
+import { runPipeline, renderProject, ROOT, DATA, Cancelled } from './lib/pipeline.mjs'
+import { totalDuration } from './remotion/project.js'
+import { loadProject, listProjects, trashItem, restoreItem, purgeTrash, reveal, applyEditorChanges, ensureProxies, mediaInfo, projectDir, projectPaths } from './lib/projects.mjs'
 import { applyEdits } from './lib/plan.mjs'
 import { loadMemes } from './lib/memes.mjs'
 import { PORTAL, savedKey, portalMe, portalRefund } from './lib/portal.mjs'
@@ -37,7 +39,9 @@ function cleanWork() {
 }
 fs.mkdirSync(WORK, { recursive: true })
 cleanWork()
-setInterval(cleanWork, 60 * 60 * 1000).unref()
+purgeTrash(DATA)
+setInterval(() => { cleanWork(); purgeTrash(DATA) }, 60 * 60 * 1000).unref()
+const STUDIO = path.join(ROOT, 'studio', 'dist')
 
 const ALLOWED_ORIGINS = new Set([PORTAL, 'https://cp.tyne.pro', 'http://localhost:3000', 'http://localhost:3313', `http://${HOST}:${PORT}`, `http://localhost:${PORT}`])
 
@@ -57,13 +61,14 @@ function publicJob(j) {
     title: j.options?.title, mode: j.options?.mode, createdAt: j.createdAt, credits: j.credits || [],
     tier: j.run?.tier || null, left: j.run?.left ?? null,
     log: j.logs.slice(-40), result: j.result ? path.basename(j.result) : null, draft: !!j.isDraft,
-    hasPlan: fs.existsSync(path.join(j.dir, 'plan.json')),
+    hasPlan: !!j.projectId || fs.existsSync(path.join(j.dir, 'plan.json')),
+    projectId: j.projectId || null,
     uploaded: (j.files.video ? 1 : 0) + j.files.items.length,
   }
 }
 
-function newJob() {
-  const id = crypto.randomBytes(6).toString('hex')
+function newJob(fixedId) {
+  const id = fixedId || crypto.randomBytes(6).toString('hex')
   const dir = path.join(WORK, id)
   fs.mkdirSync(dir, { recursive: true })
   const job = {
@@ -91,7 +96,7 @@ async function pump() {
   running = true
   job.state = 'running'
   try {
-    if (job.rerender) { job.say('rerender'); await renderJob(job, { plan: job.rerender, assetUrl, draft: job.rerenderDraft }) }
+    if (job.rerender) { job.say('rerender'); await renderProject(job, job.rerender, { assetUrl, draft: job.rerenderDraft }) }
     else await runPipeline(job, { assetUrl })
     job.state = 'done'
     job.progress = 1
@@ -120,7 +125,7 @@ function cors(req, res) {
   if (origin && ALLOWED_ORIGINS.has(origin)) {
     res.setHeader('Access-Control-Allow-Origin', origin)
     res.setHeader('Vary', 'Origin')
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, OPTIONS')
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
     if (req.headers['access-control-request-private-network']) res.setHeader('Access-Control-Allow-Private-Network', 'true')
   }
@@ -144,7 +149,7 @@ async function readJson(req) {
 const MIME = {
   '.mp4': 'video/mp4', '.wav': 'audio/wav', '.m4a': 'audio/mp4', '.mp3': 'audio/mpeg', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
   '.png': 'image/png', '.webp': 'image/webp', '.gif': 'image/gif', '.webm': 'video/webm', '.json': 'application/json',
-  '.html': 'text/html; charset=utf-8', '.ttf': 'font/ttf', '.otf': 'font/otf', '.woff': 'font/woff', '.woff2': 'font/woff2',
+  '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.ttf': 'font/ttf', '.otf': 'font/otf', '.woff': 'font/woff', '.woff2': 'font/woff2',
 }
 
 function sendFile(req, res, file, { download } = {}) {
@@ -165,10 +170,112 @@ function sendFile(req, res, file, { download } = {}) {
   }
 }
 
+function queueProjectRender(job, project, draft) {
+  fs.writeFileSync(path.join(projectDir(DATA, project.id), 'project.json'), JSON.stringify(project, null, 1))
+  job.rerenderDraft = draft
+  job.rerender = project
+  job.state = 'queued'
+  job.error = null
+  job.code = null
+  job.progress = 0
+  queue.push(job)
+  pump()
+}
+
+/** Тариф по ключу программы (с кэшем), чтобы закрыть финал из редактора в демо */
+async function currentMe() {
+  // Локальная проверка без кабинета: FARM_TEST=1 FARM_TEST_TIER=pro|premium|demo
+  if (process.env.FARM_TEST && process.env.FARM_TEST_TIER) return { tier: process.env.FARM_TEST_TIER }
+  const key = savedKey()
+  if (!meCache || meCache.key !== key || Date.now() - meCache.at > 60_000) meCache = { key, at: Date.now(), me: await portalMe(key) }
+  return meCache.me
+}
+
+// --- Проекты: список «Мої ролики» и редактор ----------------------------------------
+async function projectsApi(req, res, url, parts) {
+  const { OUT_DIR } = projectPaths(DATA)
+  if (req.method === 'GET' && parts.length === 2) {
+    const me = await currentMe()
+    const busy = new Map([...jobs.values()].filter((j) => j.projectId && ['queued', 'running'].includes(j.state)).map((j) => [j.projectId, j.id]))
+    const items = listProjects(DATA).map((p) => ({
+      ...p,
+      job: p.id ? busy.get(p.id) || null : null,
+      thumb: p.id && p.thumb ? (mediaInfo(DATA, loadProject(DATA, p.id), assetUrl)[p.thumb]?.preview || null) : null,
+      video: p.outputs?.length ? `http://${HOST}:${PORT}/api/projects/file/download?name=${encodeURIComponent(p.outputs.at(-1).file)}&inline=1` : null,
+    }))
+    return json(res, 200, { items, tier: me?.tier || null, version: VERSION })
+  }
+  // Готовый ролик по имени файла из «Готово»: скачать, открыть, показать в папке, удалить
+  if (parts[2] === 'file') {
+    const name = path.basename(url.searchParams.get('name') || '')
+    const file = path.join(OUT_DIR, name)
+    if (!name || !fs.existsSync(file)) return json(res, 404, { error: 'no file' })
+    if (req.method === 'GET' && parts[3] === 'download') return sendFile(req, res, file, { download: url.searchParams.get('inline') !== '1' })
+    if (req.method === 'POST' && parts[3] === 'reveal') { await reveal(file); return json(res, 200, { ok: true }) }
+    if (req.method === 'DELETE') return json(res, 200, { ok: true, undo: trashItem(DATA, { file: name }) })
+    return json(res, 404, { error: 'not found' })
+  }
+  if (req.method === 'POST' && parts[2] === 'restore') {
+    const body = await readJson(req)
+    restoreItem(DATA, String(body.undo || ''))
+    return json(res, 200, { ok: true })
+  }
+  let project
+  try { project = loadProject(DATA, parts[2]) } catch { project = null }
+  if (!project) return json(res, 404, { error: 'no project' })
+  const dir = projectDir(DATA, project.id)
+
+  if (req.method === 'GET' && parts.length === 3) {
+    await ensureProxies(DATA, project).catch((e) => console.error(e))
+    const me = await currentMe()
+    return json(res, 200, { project, media: mediaInfo(DATA, project, assetUrl), tier: me?.tier || null, sfx: Object.fromEntries(['click', 'type', 'pop', 'whoosh'].map((k) => [k, assetUrl(path.join(DATA, '.cache', 'sfx', `${k}.wav`))])) })
+  }
+  // Автосохранение монтажа
+  if (req.method === 'PUT' && parts.length === 3) {
+    const saved = applyEditorChanges(DATA, project, await readJson(req))
+    return json(res, 200, { ok: true, updatedAt: saved.updatedAt, clips: saved.clips })
+  }
+  if (req.method === 'DELETE' && parts.length === 3) return json(res, 200, { ok: true, undo: trashItem(DATA, { id: project.id }) })
+  if (req.method === 'GET' && parts[3] === 'original') {
+    if (!project.original) return json(res, 404, { error: 'no original' })
+    return sendFile(req, res, path.join(dir, project.original), { download: true })
+  }
+  if (req.method === 'POST' && parts[3] === 'reveal') {
+    const last = project.outputs?.at(-1)
+    await reveal(last && fs.existsSync(path.join(OUT_DIR, last.file)) ? path.join(OUT_DIR, last.file) : dir)
+    return json(res, 200, { ok: true })
+  }
+  // Стікери проекта для превью в редакторе
+  if (req.method === 'GET' && parts[3] === 'memes') {
+    const own = project.limits?.ownStickers
+    const memes = await loadMemes(path.join(DATA, '.cache'), null, { only: new Set(project.plan.memes.map((m) => m.id)), packs: own ? project.stickers?.packs : [], adult: own && project.stickers?.adult, k: savedKey(), localDir: own ? path.join(DATA, 'stickers') : null })
+    return json(res, 200, Object.fromEntries(memes.map((m) => [m.id, { kind: m.kind, src: assetUrl(m.file) }])))
+  }
+  // Финальная сборка 1080p из редактора: Premium и Pro (в демо — только превью)
+  if (req.method === 'POST' && parts[3] === 'render') {
+    const body = await readJson(req)
+    const me = await currentMe()
+    if (!me) return json(res, 401, { error: 'auth' })
+    if (me.tier === 'demo' && body.draft !== true) return json(res, 402, { error: 'locked' })
+    const running = [...jobs.values()].find((j) => j.projectId === project.id && ['queued', 'running'].includes(j.state))
+    if (running) return json(res, 200, publicJob(running))
+    const job = jobs.get(project.id) || newJob(`r${crypto.randomBytes(5).toString('hex')}`)
+    job.dir = dir
+    job.projectId = project.id
+    job.options = { lang: project.lang, title: project.title, k: savedKey(), mode: project.mode }
+    job.say('rerender')
+    queueProjectRender(job, project, body.draft === true)
+    return json(res, 200, publicJob(job))
+  }
+  return json(res, 404, { error: 'not found' })
+}
+
 const cleanName = (name) => String(name || 'file').replace(/[^\p{L}\p{N}._-]+/gu, '_').slice(-80)
 
 const server = http.createServer(async (req, res) => {
   try {
+    // Только этот компьютер по имени 127.0.0.1/localhost: чужой сайт не достучится подменой адреса
+    if (!/^(127\.0\.0\.1|localhost)(:\d+)?$/.test(req.headers.host || '')) return json(res, 403, { error: 'host' })
     if (!cors(req, res)) return json(res, 403, { error: 'origin' })
     if (req.method === 'OPTIONS') { res.writeHead(204); return res.end() }
     const url = new URL(req.url, `http://${HOST}`)
@@ -191,10 +298,20 @@ const server = http.createServer(async (req, res) => {
     // Файлы для рендера (только внутри папки данных)
     if (req.method === 'GET' && parts[0] === 'root') {
       const file = path.resolve(DATA, ...parts.slice(1))
-      const allowed = ['.cache', 'work', 'music', 'assets', 'fonts', 'stickers'].some((d) => file.startsWith(path.join(DATA, d) + path.sep))
+      const allowed = ['.cache', 'work', '.projects', 'music', 'assets', 'fonts', 'stickers'].some((d) => file.startsWith(path.join(DATA, d) + path.sep))
       if (!allowed) return json(res, 403, { error: 'forbidden' })
       return sendFile(req, res, file)
     }
+
+    // Редактор и список роликов: сайт самой программы, тот же дизайн, что и кабинет
+    if (req.method === 'GET' && parts[0] === 'studio') {
+      if (!fs.existsSync(STUDIO)) return json(res, 404, { error: 'studio not built' })
+      const file = path.resolve(STUDIO, ...parts.slice(1))
+      if (file.startsWith(STUDIO + path.sep) && fs.existsSync(file) && fs.statSync(file).isFile()) return sendFile(req, res, file)
+      return sendFile(req, res, path.join(STUDIO, 'index.html'))
+    }
+
+    if (parts[0] === 'api' && parts[1] === 'projects') return projectsApi(req, res, url, parts)
 
     if (parts[0] !== 'api' || parts[1] !== 'jobs') return json(res, 404, { error: 'not found' })
 
@@ -285,26 +402,23 @@ const server = http.createServer(async (req, res) => {
       return sendFile(req, res, job.result, { download: url.searchParams.get('inline') !== '1' })
     }
 
-    if (req.method === 'GET' && parts[3] === 'plan') return sendFile(req, res, path.join(job.dir, 'plan.json'))
+    if (req.method === 'GET' && parts[3] === 'plan') {
+      const project = job.projectId ? loadProject(DATA, job.projectId) : null
+      return project ? json(res, 200, { ...project.plan, mode: project.mode, limits: project.limits, duration: totalDuration(project) }) : sendFile(req, res, path.join(job.dir, 'plan.json'))
+    }
 
-    // Правка плана (хук, тексты, стикеры, заголовки) и быстрый перерендер без нового распознавания
+    // Правка плана в кабинете (хук, тексты, стикеры, заголовки) и быстрая пересборка без нового распознавания
     if (req.method === 'POST' && parts[3] === 'rerender') {
-      if (!['done', 'error'].includes(job.state) || !fs.existsSync(path.join(job.dir, 'plan.json'))) return json(res, 409, { error: 'no plan' })
+      const project = job.projectId ? loadProject(DATA, job.projectId) : null
+      if (!['done', 'error'].includes(job.state) || !project) return json(res, 409, { error: 'no plan' })
       const body = await readJson(req)
-      let plan = JSON.parse(fs.readFileSync(path.join(job.dir, 'plan.json'), 'utf8'))
       if (body.edits) {
-        const own = plan.limits?.ownStickers
-        const catalog = await loadMemes(path.join(DATA, '.cache'), null, { packs: own ? job.options?.stickerPacks : [], adult: own && job.options?.adultMemes, k: job.options?.k, localDir: own ? path.join(DATA, 'stickers') : null })
-        plan = { ...applyEdits(plan, body.edits, { memeIds: new Set(catalog.map((m) => m.id)) }), limits: plan.limits, landscape: plan.landscape, mode: plan.mode, screens: plan.screens, duration: plan.duration }
+        const own = project.limits?.ownStickers
+        const catalog = await loadMemes(path.join(DATA, '.cache'), null, { packs: own ? project.stickers?.packs : [], adult: own && project.stickers?.adult, k: job.options?.k, localDir: own ? path.join(DATA, 'stickers') : null })
+        const { mode, ...edited } = applyEdits({ ...project.plan, mode: project.mode }, body.edits, { memeIds: new Set(catalog.map((m) => m.id)) })
+        project.plan = edited
       }
-      job.rerenderDraft = body.draft === true
-      fs.writeFileSync(path.join(job.dir, 'plan.json'), JSON.stringify(plan, null, 1))
-      job.rerender = plan
-      job.state = 'queued'
-      job.error = null
-      job.code = null
-      queue.push(job)
-      pump()
+      queueProjectRender(job, project, body.draft === true)
       return json(res, 200, publicJob(job))
     }
 

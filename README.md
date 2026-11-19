@@ -5,7 +5,7 @@
 - Монтаж іде на вашому комп’ютері. Відео нікуди не завантажуються.
 - Генератор слухає лише цей комп’ютер (127.0.0.1:4747).
 - Ставить офіційні пакети: Node.js, ffmpeg, Git, Remotion, whisper.cpp, Claude Code.
-- Версія генератора **45883b55827f**. Результат перевірки VirusTotal показано на сторінці інструмента в кабінеті.
+- Версія генератора **734967ba5592**. Результат перевірки VirusTotal показано на сторінці інструмента в кабінеті.
 
 ### Додаток для Mac
 
@@ -25,7 +25,7 @@ curl -fsSL https://raw.githubusercontent.com/tyne-pro/video-farm/main/install.sh
 - Editing runs on your computer. Videos are not uploaded anywhere.
 - The generator listens only on this computer (127.0.0.1:4747).
 - Installs official packages: Node.js, ffmpeg, Git, Remotion, whisper.cpp, Claude Code.
-- Generator version **45883b55827f**. The VirusTotal result is shown on the tool page in the cabinet.
+- Generator version **734967ba5592**. The VirusTotal result is shown on the tool page in the cabinet.
 
 ### Mac app
 

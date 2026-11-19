@@ -71,13 +71,14 @@ function zoomAt(frame, zooms) {
 }
 
 /** Видео автора: вертикальное — на весь кадр, горизонтальное — по центру на размытом фоне */
-const MainVideo = ({ src, zoom, landscape }) => (
+const MainVideo = ({ src, zoom, landscape, startFrom = 0 }) => (
   <AbsoluteFill style={{ backgroundColor: '#000', overflow: 'hidden' }}>
     {landscape && (
-      <OffthreadVideo src={src} muted style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', filter: 'blur(40px) brightness(0.55)', transform: 'scale(1.2)' }} />
+      <OffthreadVideo src={src} startFrom={startFrom} muted style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', filter: 'blur(40px) brightness(0.55)', transform: 'scale(1.2)' }} />
     )}
     <OffthreadVideo
       src={src}
+      startFrom={startFrom}
       muted
       style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: landscape ? 'contain' : 'cover', transform: `scale(${zoom})`, transformOrigin: landscape ? '50% 50%' : '50% 35%' }}
     />
@@ -96,13 +97,13 @@ const Screen = ({ screen, index, palette }) => {
   const kb = { transform: `scale(${1.08 + p * 0.1}) translate(${dir[0] * p * 2.5}%, ${dir[1] * p * 2.5}%)` }
   return (
     <AbsoluteFill style={{ opacity: enter, transform: `scale(${1.03 - enter * 0.03})` }}>
-      {m?.kind === 'video' && <OffthreadVideo src={m.src} muted style={{ width: '100%', height: '100%', objectFit: 'cover', transform: `scale(${1 + p * 0.06})` }} />}
+      {m?.kind === 'video' && <OffthreadVideo src={m.src} startFrom={m.startFrom || 0} muted style={{ width: '100%', height: '100%', objectFit: 'cover', transform: `scale(${1 + p * 0.06})` }} />}
       {m?.kind === 'image' && (
         <AbsoluteFill style={{ overflow: 'hidden', backgroundColor: palette[0] }}>
           <Img src={m.src} style={{ width: '100%', height: '100%', objectFit: 'cover', ...kb }} />
         </AbsoluteFill>
       )}
-      {!m && <GeneratedBackground palette={palette} index={index} />}
+      {!m && <GeneratedBackground palette={palette} index={screen.bg ?? index} />}
       {/* Затемнение под текст: контраст субтитров на любом материале */}
       <AbsoluteFill style={{ background: m ? 'linear-gradient(180deg, rgba(0,0,0,0.25) 0%, rgba(0,0,0,0.15) 30%, rgba(0,0,0,0.5) 55%, rgba(0,0,0,0.25) 100%)' : 'linear-gradient(180deg, rgba(0,0,0,0) 30%, rgba(0,0,0,0.25) 55%, rgba(0,0,0,0) 80%)' }} />
     </AbsoluteFill>
@@ -299,10 +300,31 @@ export const Farm = (props) => {
   const textColor = slides || landscape ? WHITE : captionColor
   const palette = paletteFor(plan.palette, plan.title)
 
+  // Проект из редактора: основная дорожка клипами (разрезы, перестановки, замены) и голос за ними
+  const clips = props.clips
   return (
     <AbsoluteFill style={{ backgroundColor: '#0a0a0a' }}>
-      {!slides && videoSrc && <MainVideo src={videoSrc} zoom={zoom} landscape={landscape} />}
-      {slides && screens.map((sc, i) => (
+      {clips && clips.map((c, i) => c.kind === 'main' ? (
+        <Sequence key={c.id} from={f(c.start)} durationInFrames={Math.max(1, f(c.start + c.dur) - f(c.start))} layout="none">
+          <MainVideo src={c.src} zoom={zoom} landscape={landscape} startFrom={f(c.srcIn)} />
+        </Sequence>
+      ) : (
+        <Sequence key={c.id} from={Math.max(0, f(c.start) - (i ? XFADE : 0))} durationInFrames={Math.max(1, f(c.start + c.dur) - f(c.start) + (i ? XFADE : 0))} layout="none">
+          <Screen screen={{ dur: c.dur, bg: c.bg, media: c.kind === 'bg' || !c.src ? null : { kind: c.kind, src: c.src, startFrom: Math.max(0, f(c.srcIn) - (i ? XFADE : 0)) } }} index={i} palette={palette} />
+        </Sequence>
+      ))}
+      {clips && (props.voiceClips || []).map((v, i) => (
+        <Sequence key={`v${i}`} from={f(v.start)} durationInFrames={Math.max(1, f(v.start + v.dur) - f(v.start))} layout="none">
+          <Audio src={v.src} startFrom={f(v.srcIn)} volume={1} />
+        </Sequence>
+      ))}
+      {clips && props.music && (
+        <Sequence from={f(props.music.start)} durationInFrames={Math.max(1, f(props.music.dur))} layout="none">
+          <Audio src={props.music.src} startFrom={f(props.music.srcIn)} loop={!!props.music.loop} volume={props.music.volume} />
+        </Sequence>
+      )}
+      {!clips && !slides && videoSrc && <MainVideo src={videoSrc} zoom={zoom} landscape={landscape} />}
+      {!clips && slides && screens.map((sc, i) => (
         <Sequence key={`sc${i}`} from={Math.max(0, f(sc.start) - (i ? XFADE : 0))} durationInFrames={Math.max(1, f(sc.dur) + (i ? XFADE : 0))} layout="none">
           <Screen screen={sc} index={i} palette={palette} />
         </Sequence>
@@ -319,7 +341,7 @@ export const Farm = (props) => {
       ))}
 
       {plan.memes.map((m, i) => {
-        const meme = memes[m.id]
+        const meme = memes?.[m.id]
         if (!meme) return null
         return (
           <Sequence key={`m${i}`} from={f(m.start)} durationInFrames={Math.max(8, f(m.dur))} layout="none">
@@ -333,9 +355,9 @@ export const Farm = (props) => {
       {(emoji || rollerSrc) && <Roller emoji={emoji} rollerSrc={rollerSrc} box={box.roller} width={width} />}
       {watermark && <Watermark />}
 
-      {voiceSrc && <Audio src={voiceSrc} volume={1} />}
-      {musicSrc && <Audio src={musicSrc} loop volume={musicVolume} />}
-      {plan.sfx.map((s, i) => (
+      {!clips && voiceSrc && <Audio src={voiceSrc} volume={1} />}
+      {!clips && musicSrc && <Audio src={musicSrc} loop volume={musicVolume} />}
+      {plan.sfx.map((s, i) => sfx?.[s.kind] && (
         <Sequence key={`s${i}`} from={f(s.t)} durationInFrames={f(0.5)} layout="none">
           <Audio src={sfx[s.kind]} volume={s.kind === 'type' ? 0.35 : s.kind === 'whoosh' ? 0.3 : 0.55} />
         </Sequence>

@@ -80,6 +80,14 @@ if (os === 'mac') {
   rmSync(out, { recursive: true, force: true })
   mkdirSync(out, { recursive: true })
   for (const item of ['package.json', 'package-lock.json', 'server.mjs', 'lib', 'remotion', 'ui', 'scripts']) cpSync(join(src, item), join(out, item), { recursive: true })
+  // «Мої ролики» и редактор: страница самой программы (127.0.0.1:4747/studio), собирается здесь
+  {
+    const studio = join(src, 'studio')
+    const npmS = os === 'win' && process.platform === 'win32' ? 'npm.cmd' : 'npm'
+    execFileSync(npmS, ['ci', '--no-audit', '--no-fund', '--loglevel=error'], { cwd: studio, stdio: 'inherit', shell: process.platform === 'win32' })
+    execFileSync(npmS, ['run', 'build'], { cwd: studio, stdio: 'inherit', shell: process.platform === 'win32' })
+    cpSync(join(studio, 'dist'), join(out, 'studio', 'dist'), { recursive: true })
+  }
   const npm = os === 'win' && process.platform === 'win32' ? 'npm.cmd' : 'npm'
   execFileSync(npm, ['ci', '--omit=dev', '--no-audit', '--no-fund', '--loglevel=error'], { cwd: out, stdio: 'inherit', shell: process.platform === 'win32' })
   // Caches that npm or a local run could leave behind

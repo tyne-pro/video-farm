@@ -122,7 +122,7 @@ fn node_command(app: &AppHandle, script: &Path, args: &[&str]) -> Command {
         .stderr(Stdio::piped());
     let sep = if cfg!(windows) { ";" } else { ":" };
     let path = std::env::var("PATH").unwrap_or_default();
-    // Claude Code and git usually live here; a GUI app on macOS does not get the shell PATH
+    // Homebrew tools usually live here; a GUI app on macOS does not get the shell PATH
     let extra = if cfg!(target_os = "macos") { format!("{sep}/opt/homebrew/bin{sep}/usr/local/bin") } else { String::new() };
     cmd.env("PATH", format!("{}{sep}{path}{extra}", bin.display()));
     #[cfg(windows)]
@@ -324,10 +324,10 @@ fn open_place(app: AppHandle, place: String) -> Result<(), String> {
 
 #[tauri::command]
 fn open_link(app: AppHandle, path: String) -> Result<(), String> {
-    // Only our own pages and the code repository
+    // Only our own pages, the clips page of this app (this computer) and the code repository
     let base = portal();
     let url = if path.starts_with('/') { format!("{base}{path}") } else { path };
-    if !(url.starts_with(&base) || url.starts_with("https://tyne.pro") || url.starts_with("https://github.com/tyne-pro/") || url.starts_with("https://claude.ai/")) {
+    if !(url.starts_with(&base) || url.starts_with("https://tyne.pro") || url.starts_with("https://github.com/tyne-pro/") || url.starts_with("http://127.0.0.1:4747/studio/")) {
         return Err("blocked".into());
     }
     app.opener().open_url(url, None::<&str>).map_err(|e| e.to_string())

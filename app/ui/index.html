@@ -80,8 +80,8 @@
 
   <button class="btn main" id="open" data-t="open">Відкрити ферму в кабінеті</button>
   <div class="pair">
+    <button class="btn ghost" id="clips" data-t="clips">Мої ролики й редактор</button>
     <button class="btn ghost" id="done" data-t="done">Папка «Готово»</button>
-    <button class="btn ghost" id="code" data-t="code">Код на GitHub</button>
   </div>
 
   <p class="log-title" data-t="log">Журнал</p>
@@ -89,22 +89,23 @@
 
   <footer>
     <span id="ver"></span>
+    <button id="code" data-t="code">Код на GitHub</button>
     <button id="folder" data-t="folder">Папка ферми</button>
   </footer>
 
 <script>
   const T = {
-    uk: { title: 'Ферма роликів', restart: 'Перезапустити', open: 'Відкрити ферму в кабінеті', done: 'Папка «Готово»', code: 'Код на GitHub', log: 'Журнал', folder: 'Папка ферми',
+    uk: { clips: 'Мої ролики й редактор', title: 'Ферма роликів', restart: 'Перезапустити', open: 'Відкрити ферму в кабінеті', done: 'Папка «Готово»', code: 'Код на GitHub', log: 'Журнал', folder: 'Папка ферми',
       running: 'Генератор працює', preparing: 'Перший запуск: готуємо програму', starting: 'Запускаємо генератор…', stopped: 'Генератор зупинено', error: 'Генератор не запустився', idle: 'Запускаємо…',
       hPreparing: 'Один раз, ~1.7 ГБ, 5–15 хвилин. Вікно можна згорнути.', hError: 'Натисніть «Перезапустити».', hStopped: 'Натисніть «Перезапустити».',
       connected: 'Кабінет підключено', notConnected: 'Кабінет не підключено', connect: 'Підключити кабінет', disconnect: 'Відключити',
       demo: 'Демо', premium: 'Premium', pro: 'Pro', of: 'з', version: 'Версія' },
-    ru: { title: 'Ферма роликов', restart: 'Перезапустить', open: 'Открыть ферму в кабинете', done: 'Папка «Готово»', code: 'Код на GitHub', log: 'Журнал', folder: 'Папка фермы',
+    ru: { clips: 'Мои ролики и редактор', title: 'Ферма роликов', restart: 'Перезапустить', open: 'Открыть ферму в кабинете', done: 'Папка «Готово»', code: 'Код на GitHub', log: 'Журнал', folder: 'Папка фермы',
       running: 'Генератор работает', preparing: 'Первый запуск: готовим программу', starting: 'Запускаем генератор…', stopped: 'Генератор остановлен', error: 'Генератор не запустился', idle: 'Запускаем…',
       hPreparing: 'Один раз, ~1.7 ГБ, 5–15 минут. Окно можно свернуть.', hError: 'Нажмите «Перезапустить».', hStopped: 'Нажмите «Перезапустить».',
       connected: 'Кабинет подключён', notConnected: 'Кабинет не подключён', connect: 'Подключить кабинет', disconnect: 'Отключить',
       demo: 'Демо', premium: 'Premium', pro: 'Pro', of: 'из', version: 'Версия' },
-    en: { title: 'Video farm', restart: 'Restart', open: 'Open the farm in the cabinet', done: 'Finished clips', code: 'Code on GitHub', log: 'Log', folder: 'Farm folder',
+    en: { clips: 'My clips and editor', title: 'Video farm', restart: 'Restart', open: 'Open the farm in the cabinet', done: 'Finished clips', code: 'Code on GitHub', log: 'Log', folder: 'Farm folder',
       running: 'Generator is running', preparing: 'First run: preparing the app', starting: 'Starting the generator…', stopped: 'Generator stopped', error: 'Generator did not start', idle: 'Starting…',
       hPreparing: 'Once, ~1.7 GB, 5–15 minutes. You can minimise the window.', hError: 'Press Restart.', hStopped: 'Press Restart.',
       connected: 'Cabinet connected', notConnected: 'Cabinet not connected', connect: 'Connect the cabinet', disconnect: 'Disconnect',
@@ -154,6 +155,7 @@
   $('open').onclick = () => invoke('open_link', { path: '/tools/farm' })
   $('cabBtn').onclick = () => (connected ? invoke('farm_disconnect').then(refresh) : invoke('open_link', { path: '/tools/farm#app' }))
   $('done').onclick = () => invoke('open_place', { place: 'done' })
+  $('clips').onclick = () => invoke('open_link', { path: `http://127.0.0.1:4747/studio/?lang=${lang}&theme=${matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'}` })
   $('folder').onclick = () => invoke('open_place', { place: 'data' })
   $('restart').onclick = () => invoke('farm_restart').then(refresh)
   $('code').onclick = () => invoke('open_link', { path: 'https://github.com/tyne-pro/video-farm' })
