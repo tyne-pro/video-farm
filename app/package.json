@@ -1,7 +1,7 @@
 {
   "name": "tyne-farm-app",
   "private": true,
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Desktop app of the tyne.pro video farm (Tauri)",
   "scripts": {
     "tauri": "tauri",

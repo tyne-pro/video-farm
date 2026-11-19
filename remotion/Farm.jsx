@@ -12,6 +12,7 @@ import {
   AbsoluteFill, Audio, Easing, Img, OffthreadVideo, Sequence,
   continueRender, delayRender, interpolate, useCurrentFrame, useVideoConfig,
 } from 'remotion'
+import { GeneratedBackground, Grain, Vignette, paletteFor } from './Backgrounds.jsx'
 import { loadFont as loadMontserrat } from '@remotion/google-fonts/Montserrat'
 import { loadFont as loadUnbounded } from '@remotion/google-fonts/Unbounded'
 import { loadFont as loadPlayfair } from '@remotion/google-fonts/PlayfairDisplay'
@@ -46,9 +47,10 @@ const L = {
 const LS = {
   ...L,
   captions: { left: 80, top: 760, width: 920, height: 520, align: 'center', size: 76, lineSize: 92, blockWidth: 900 },
-  meme: { cx: 540, cy: 1460, max: 480 },
+  meme: { cx: 540, cy: 1380, max: 420 },
 }
-const BACKGROUNDS = ['#2a2418', '#1c2430', '#2b1d27', '#1d2a22', '#2c2516', '#221e30']
+// Переход между экранами: новый экран проявляется поверх старого за 8 кадров
+const XFADE = 8
 
 // --- Зум головы ------------------------------------------------------------------
 
@@ -82,21 +84,35 @@ const MainVideo = ({ src, zoom, landscape }) => (
   </AbsoluteFill>
 )
 
-/** Экран из клипа, картинки (медленный наезд) или цветного фона */
-const Screen = ({ screen, index }) => {
+/** Экран: свой клип (лёгкий наезд), картинка (Кен Бёрнс: зум и панорама) или живой фон под тему */
+const Screen = ({ screen, index, palette }) => {
   const frame = useCurrentFrame()
-  const total = Math.max(1, f(screen.dur))
-  const k = interpolate(frame, [0, total], [1, 1.08], { extrapolateRight: 'clamp' })
-  const fade = interpolate(frame, [0, 4], [0.4, 1], { extrapolateRight: 'clamp' })
+  const total = Math.max(1, f(screen.dur) + XFADE)
+  const p = interpolate(frame, [0, total], [0, 1], { extrapolateRight: 'clamp' })
+  const enter = index === 0 ? 1 : interpolate(frame, [0, XFADE], [0, 1], { extrapolateRight: 'clamp', easing: Easing.out(Easing.cubic) })
   const m = screen.media
+  // Направление панорамы чередуется: влево, вправо, вверх, вниз
+  const dir = [[-1, 0], [1, 0], [0, -1], [0, 1]][index % 4]
+  const kb = { transform: `scale(${1.08 + p * 0.1}) translate(${dir[0] * p * 2.5}%, ${dir[1] * p * 2.5}%)` }
   return (
-    <AbsoluteFill style={{ backgroundColor: '#000', opacity: fade }}>
-      {m?.kind === 'video' && <OffthreadVideo src={m.src} muted style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
-      {m?.kind === 'image' && <Img src={m.src} style={{ width: '100%', height: '100%', objectFit: 'cover', transform: `scale(${k})` }} />}
-      {!m && <AbsoluteFill style={{ background: `radial-gradient(120% 80% at 50% 30%, ${BACKGROUNDS[index % BACKGROUNDS.length]} 0%, #121110 65%, #0a0a0a 100%)` }} />}
-      {m && <AbsoluteFill style={{ background: 'linear-gradient(180deg, rgba(0,0,0,0.15) 0%, rgba(0,0,0,0.45) 45%, rgba(0,0,0,0.55) 70%, rgba(0,0,0,0.2) 100%)' }} />}
+    <AbsoluteFill style={{ opacity: enter, transform: `scale(${1.03 - enter * 0.03})` }}>
+      {m?.kind === 'video' && <OffthreadVideo src={m.src} muted style={{ width: '100%', height: '100%', objectFit: 'cover', transform: `scale(${1 + p * 0.06})` }} />}
+      {m?.kind === 'image' && (
+        <AbsoluteFill style={{ overflow: 'hidden', backgroundColor: palette[0] }}>
+          <Img src={m.src} style={{ width: '100%', height: '100%', objectFit: 'cover', ...kb }} />
+        </AbsoluteFill>
+      )}
+      {!m && <GeneratedBackground palette={palette} index={index} />}
+      {/* Затемнение под текст: контраст субтитров на любом материале */}
+      <AbsoluteFill style={{ background: m ? 'linear-gradient(180deg, rgba(0,0,0,0.25) 0%, rgba(0,0,0,0.15) 30%, rgba(0,0,0,0.5) 55%, rgba(0,0,0,0.25) 100%)' : 'linear-gradient(180deg, rgba(0,0,0,0) 30%, rgba(0,0,0,0.25) 55%, rgba(0,0,0,0) 80%)' }} />
     </AbsoluteFill>
   )
+}
+
+/** Размер шрифта, при котором самое длинное слово влезает в ширину блока */
+const fitSize = (base, width, words, k = 0.66) => {
+  const longest = Math.max(1, ...words.map((w) => String(w).length))
+  return Math.min(base, Math.floor(width / (longest * k)))
 }
 
 /** Демо: водяной знак в углу и внизу */
@@ -142,7 +158,7 @@ const Hook = ({ hook, box, color, font }) => {
             fontFamily: italic ? playfair : (font || unbounded),
             fontStyle: italic ? 'italic' : 'normal',
             fontWeight: 700,
-            fontSize: italic ? box.size * 0.9 : box.size,
+            fontSize: fitSize(italic ? box.size * 0.9 : box.size, box.width, chunk.join(' ').split(' '), italic ? 0.55 : 0.72),
             lineHeight: 1.02,
             color: i === hook.chunks.length - 1 ? (color === WHITE ? BUTTER : '#7A4E00') : color,
             textAlign: 'center',
@@ -182,7 +198,8 @@ const Captions = ({ captions, box, color, hookEnd, font }) => {
         transformOrigin: `${align} center`,
         fontFamily: font || (line ? unbounded : montserrat),
         fontWeight: line ? 700 : 600,
-        fontSize: line ? box.lineSize : box.size,
+        fontSize: line ? fitSize(box.lineSize, box.width, block.words.map((w) => w.text), 0.72) : fitSize(box.size, box.blockWidth, block.words.map((w) => w.text), 0.58),
+        overflowWrap: 'anywhere',
         lineHeight: 1.15,
         color,
         textTransform: line ? 'uppercase' : 'none',
@@ -280,15 +297,18 @@ export const Farm = (props) => {
   const box = slides ? LS : L
   const zoom = slides ? 1 : zoomAt(frame, plan.zooms || [])
   const textColor = slides || landscape ? WHITE : captionColor
+  const palette = paletteFor(plan.palette, plan.title)
 
   return (
     <AbsoluteFill style={{ backgroundColor: '#0a0a0a' }}>
       {!slides && videoSrc && <MainVideo src={videoSrc} zoom={zoom} landscape={landscape} />}
       {slides && screens.map((sc, i) => (
-        <Sequence key={`sc${i}`} from={f(sc.start)} durationInFrames={Math.max(1, f(sc.dur))} layout="none">
-          <Screen screen={sc} index={i} />
+        <Sequence key={`sc${i}`} from={Math.max(0, f(sc.start) - (i ? XFADE : 0))} durationInFrames={Math.max(1, f(sc.dur) + (i ? XFADE : 0))} layout="none">
+          <Screen screen={sc} index={i} palette={palette} />
         </Sequence>
       ))}
+      {slides && <Vignette strength={0.45} />}
+      {slides && <Grain />}
 
       <Captions captions={plan.captions} box={box.captions} color={textColor} hookEnd={plan.hook.end} font={font} />
 

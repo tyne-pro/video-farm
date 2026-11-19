@@ -10,7 +10,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
 import { spawn } from 'node:child_process'
-import { runPipeline, renderJob, ROOT, DATA } from './lib/pipeline.mjs'
+import { runPipeline, renderJob, ROOT, DATA, Cancelled } from './lib/pipeline.mjs'
 import { applyEdits } from './lib/plan.mjs'
 import { loadMemes } from './lib/memes.mjs'
 import { PORTAL, savedKey, portalMe, portalRefund } from './lib/portal.mjs'
@@ -54,7 +54,7 @@ const note = (line) => { line = `${stampNow()} ${line}`; appLog.push(line); if (
 function publicJob(j) {
   return {
     id: j.id, state: j.state, step: j.step, progress: j.progress, error: j.error, code: j.code || null,
-    title: j.options?.title, mode: j.options?.mode, createdAt: j.createdAt,
+    title: j.options?.title, mode: j.options?.mode, createdAt: j.createdAt, credits: j.credits || [],
     tier: j.run?.tier || null, left: j.run?.left ?? null,
     log: j.logs.slice(-40), result: j.result ? path.basename(j.result) : null, draft: !!j.isDraft,
     hasPlan: fs.existsSync(path.join(j.dir, 'plan.json')),
@@ -97,12 +97,12 @@ async function pump() {
     job.progress = 1
   } catch (e) {
     job.state = 'error'
-    // Технические подробности — только в консоль разработчика; пользователю — понятная фраза
-    const known = ['auth', 'limit', 'busy', 'offline', 'needVideo', 'needItems', 'needTopic'].find((c) => e.message === t(job.options?.lang, c))
-    job.code = known || 'error'
-    job.error = known ? e.message : t(job.options?.lang, 'error', { msg: String(e.message || '').split('\n')[0].slice(0, 160) })
+    // Технические подробности — только в файл ошибок; пользователю — понятная фраза
+    const known = ['auth', 'limit', 'busy', 'offline', 'needVideo', 'needItems', 'needTopic', 'notVideo'].find((c) => e.message === t(job.options?.lang, c))
+    job.code = e instanceof Cancelled ? 'cancelled' : known || 'error'
+    job.error = e instanceof Cancelled ? t(job.options?.lang, 'cancelled') : known ? e.message : t(job.options?.lang, 'failed')
     job.log(job.error)
-    if (!known) console.error(e)
+    if (!known && !(e instanceof Cancelled)) console.error(e)
     // Сорвавшийся ролик возвращаем в лимит (кроме ошибок самого ключа и лимита)
     if (job.run?.runId && !job.rerender) { await portalRefund(job.options?.k, job.run.runId); job.run.left += 1; meCache = null }
   } finally {
@@ -222,6 +222,7 @@ const server = http.createServer(async (req, res) => {
       })
       if (parts[4] === 'video') job.files.video = file
       else job.files.items.push(file)
+      job.names = { ...(job.names || {}), [file]: name }
       return json(res, 200, publicJob(job))
     }
 
@@ -253,6 +254,31 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === 'GET' && parts.length === 3) return json(res, 200, publicJob(job))
+
+    // Отмена: из очереди — сразу, в работе — после текущего шага, рендер — сразу
+    if (req.method === 'POST' && parts[3] === 'cancel') {
+      if (['done', 'error'].includes(job.state)) return json(res, 200, publicJob(job))
+      job.cancelled = true
+      const i = queue.indexOf(job)
+      if (i >= 0) { queue.splice(i, 1); job.state = 'error'; job.code = 'cancelled'; job.error = t(job.options?.lang, 'cancelled'); job.log(job.error) }
+      job.cancelRender?.()
+      return json(res, 200, publicJob(job))
+    }
+
+    // Повтор после ошибки или отмены: те же файлы и настройки, новый учёт ролика (сорвавшийся вернулся в лимит)
+    if (req.method === 'POST' && parts[3] === 'retry') {
+      if (job.state !== 'error' || !job.options) return json(res, 409, { error: 'not failed' })
+      job.cancelled = false
+      job.error = null
+      job.code = null
+      job.run = null
+      job.progress = 0
+      job.state = 'queued'
+      job.say('retry')
+      queue.push(job)
+      pump()
+      return json(res, 200, publicJob(job))
+    }
 
     if (req.method === 'GET' && parts[3] === 'result') {
       if (!job.result) return json(res, 404, { error: 'not ready' })
