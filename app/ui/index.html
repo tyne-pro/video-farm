@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ферма роликів · tyne.pro</title>
+<style>
+  /* Same tokens as the tyne.pro cabinet */
+  :root {
+    --bg-base: #201f1e; --bg-surface: #2b2822; --bg-border: #3d3a33;
+    --text-primary: #f3eee6; --text-secondary: #c9c2b8; --text-muted: #b8b1a7;
+    --accent: rgb(240 163 58); --accent-rgb: 240 163 58; --on-accent: #1a1206;
+    --green: rgb(62 230 168); --red: rgb(255 122 107); --amber: rgb(255 209 102);
+    color-scheme: dark;
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --bg-base: #f6f2ea; --bg-surface: #fffdf9; --bg-border: #e2dacb; --text-primary: #1b1712; --text-secondary: #514c45; --text-muted: #6b645a; --accent: rgb(196 112 10); --accent-rgb: 196 112 10; --on-accent: #fff; --green: rgb(10 140 96); --red: rgb(200 60 45); --amber: rgb(160 110 0); color-scheme: light; }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg-base); color: var(--text-primary); font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  body { padding: 20px; display: grid; gap: 14px; min-height: 100vh; align-content: start; }
+  header { display: flex; align-items: center; gap: 12px; }
+  .logo { height: 44px; width: 44px; display: grid; place-items: center; border-radius: 14px; border: 1px solid var(--bg-border); background: var(--bg-surface); color: var(--accent); flex: none; }
+  h1 { margin: 0; font-size: 20px; line-height: 1.2; font-weight: 700; letter-spacing: -.01em; }
+  .sub { margin: 2px 0 0; font-size: 13px; color: var(--text-muted); }
+  .card { border-radius: 16px; border: 1px solid var(--bg-border); background: var(--bg-surface); padding: 16px; }
+  .state { display: flex; align-items: center; gap: 10px; font-weight: 600; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--text-muted); flex: none; }
+  .dot.ok { background: var(--green); box-shadow: 0 0 0 4px rgb(62 230 168 / .15); }
+  .dot.wait { background: var(--amber); animation: pulse 1.2s ease-in-out infinite; }
+  .dot.bad { background: var(--red); }
+  @keyframes pulse { 50% { opacity: .35; } }
+  @media (prefers-reduced-motion: reduce) { .dot.wait { animation: none; } }
+  .hint { margin: 6px 0 0; font-size: 13.5px; color: var(--text-secondary); }
+  .btn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 48px; padding: 0 16px; border-radius: 12px; border: 0; font-family: inherit; font-size: 15px; font-weight: 600; line-height: 1; cursor: pointer; transition: filter .15s, border-color .15s, color .15s; }
+  .btn.main { background: var(--accent); color: var(--on-accent); }
+  .btn.main:hover { filter: brightness(1.08); }
+  .btn.ghost { background: transparent; color: var(--text-primary); border: 1px solid var(--bg-border); font-weight: 500; }
+  .btn.ghost:hover { border-color: rgb(var(--accent-rgb) / .5); }
+  .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .connected { display: none; align-items: center; gap: 8px; font-size: 13.5px; color: var(--green); margin-top: 10px; }
+  .connected.on { display: flex; }
+  details { font-size: 13px; }
+  summary { min-height: 40px; display: flex; align-items: center; cursor: pointer; color: var(--text-secondary); font-weight: 500; }
+  pre { margin: 0; max-height: 220px; overflow: auto; white-space: pre-wrap; word-break: break-word; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--text-muted); border: 1px solid var(--bg-border); border-radius: 12px; padding: 10px; }
+  footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; font-size: 12.5px; color: var(--text-muted); }
+  footer button { background: none; border: 0; padding: 6px 0; min-height: 32px; color: var(--text-secondary); font: inherit; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+  .path { font-size: 12.5px; color: var(--text-muted); word-break: break-all; margin: 8px 0 0; }
+</style>
+</head>
+<body>
+  <header>
+    <span class="logo" aria-hidden="true">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.2 6 3 11l-.9-2.4c-.3-1.1.3-2.2 1.3-2.5l13.5-4c1.1-.3 2.2.3 2.5 1.3Z"/><path d="m6.2 5.3 3.1 3.9"/><path d="m12.4 3.4 3.1 4"/><path d="M3 11h18v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>
+    </span>
+    <div>
+      <h1 data-t="title">Ферма роликів</h1>
+      <p class="sub" data-t="sub">Монтаж іде на цьому комп’ютері</p>
+    </div>
+  </header>
+
+  <section class="card" aria-live="polite">
+    <div class="state"><span class="dot wait" id="dot"></span><span id="state">…</span></div>
+    <p class="hint" id="hint"></p>
+    <div class="connected" id="connected">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
+      <span data-t="connected">Кабінет підключено</span>
+    </div>
+  </section>
+
+  <button class="btn main" id="open" data-t="open">Відкрити ферму в кабінеті</button>
+  <button class="btn ghost" id="connect" data-t="connect">Підключити кабінет</button>
+  <div class="row">
+    <button class="btn ghost" id="done" data-t="done">Папка «Готово»</button>
+    <button class="btn ghost" id="folder" data-t="folder">Папка ферми</button>
+  </div>
+
+  <details>
+    <summary data-t="log">Журнал генератора</summary>
+    <pre id="log"></pre>
+    <p class="path" id="path"></p>
+  </details>
+
+  <footer>
+    <span id="ver"></span>
+    <span>
+      <button id="restart" data-t="restart">Перезапустити</button>
+      ·
+      <button id="code" data-t="code">Код на GitHub</button>
+    </span>
+  </footer>
+
+<script>
+  const T = {
+    uk: { title: 'Ферма роликів', sub: 'Монтаж іде на цьому комп’ютері', open: 'Відкрити ферму в кабінеті', connect: 'Підключити кабінет', done: 'Папка «Готово»', folder: 'Папка ферми', log: 'Журнал генератора', restart: 'Перезапустити', code: 'Код на GitHub', connected: 'Кабінет підключено',
+      running: 'Генератор працює', preparing: 'Перший запуск: готую модель', starting: 'Запускаю генератор…', stopped: 'Генератор зупинено', error: 'Генератор не запустився', idle: 'Запускаю…',
+      hRunning: 'Відкрийте ферму в кабінеті: сторінка сама знайде генератор. Вікно можна згорнути, не закривайте його під час монтажу.', hPreparing: 'Один раз качаю модель розпізнавання мови й браузер для рендера (~1.7 ГБ). Це 5–15 хвилин.', hStarting: 'Кілька секунд.', hStopped: 'Натисніть «Перезапустити».', hError: 'Подивіться журнал нижче й натисніть «Перезапустити».', hConnect: 'Натисніть «Підключити кабінет»: відкриється сторінка ферми, там кнопка «Підключити додаток». Так генератор отримає бібліотеку мемів.', version: 'Версія' },
+    ru: { title: 'Ферма роликов', sub: 'Монтаж идёт на этом компьютере', open: 'Открыть ферму в кабинете', connect: 'Подключить кабинет', done: 'Папка «Готово»', folder: 'Папка фермы', log: 'Журнал генератора', restart: 'Перезапустить', code: 'Код на GitHub', connected: 'Кабинет подключён',
+      running: 'Генератор работает', preparing: 'Первый запуск: готовлю модель', starting: 'Запускаю генератор…', stopped: 'Генератор остановлен', error: 'Генератор не запустился', idle: 'Запускаю…',
+      hRunning: 'Откройте ферму в кабинете: страница сама найдёт генератор. Окно можно свернуть, не закрывайте его во время монтажа.', hPreparing: 'Один раз качаю модель распознавания речи и браузер для рендера (~1.7 ГБ). Это 5–15 минут.', hStarting: 'Несколько секунд.', hStopped: 'Нажмите «Перезапустить».', hError: 'Посмотрите журнал ниже и нажмите «Перезапустить».', hConnect: 'Нажмите «Подключить кабинет»: откроется страница фермы, там кнопка «Подключить приложение». Так генератор получит библиотеку мемов.', version: 'Версия' },
+    en: { title: 'Video farm', sub: 'Editing runs on this computer', open: 'Open the farm in the cabinet', connect: 'Connect the cabinet', done: 'Finished clips', folder: 'Farm folder', log: 'Generator log', restart: 'Restart', code: 'Code on GitHub', connected: 'Cabinet connected',
+      running: 'Generator is running', preparing: 'First run: preparing the model', starting: 'Starting the generator…', stopped: 'Generator stopped', error: 'Generator did not start', idle: 'Starting…',
+      hRunning: 'Open the farm in the cabinet: the page finds the generator itself. You can minimise this window, keep it open while editing.', hPreparing: 'Downloading the speech model and the render browser once (~1.7 GB). Takes 5–15 minutes.', hStarting: 'A few seconds.', hStopped: 'Press Restart.', hError: 'Check the log below and press Restart.', hConnect: 'Press Connect the cabinet: the farm page opens, press Connect the app there. This gives the generator the meme library.', version: 'Version' },
+  }
+  const nav = (navigator.language || 'uk').slice(0, 2)
+  const lang = nav === 'ru' ? 'ru' : nav === 'uk' ? 'uk' : nav === 'en' ? 'en' : 'uk'
+  const t = T[lang]
+  document.documentElement.lang = lang
+  document.querySelectorAll('[data-t]').forEach((el) => { el.textContent = t[el.dataset.t] })
+
+  const { invoke } = window.__TAURI__.core
+  const { listen } = window.__TAURI__.event
+  const $ = (id) => document.getElementById(id)
+  const logEl = $('log')
+  const DOT = { running: 'ok', preparing: 'wait', starting: 'wait', idle: 'wait', stopped: 'bad', error: 'bad' }
+  const HINT = { running: 'hRunning', preparing: 'hPreparing', starting: 'hStarting', stopped: 'hStopped', error: 'hError' }
+
+  function render(s) {
+    const phase = s.phase || 'idle'
+    $('dot').className = 'dot ' + (DOT[phase] || 'wait')
+    $('state').textContent = t[phase] || t.idle
+    $('hint').textContent = (phase === 'running' && !s.connected) ? t.hConnect : (t[HINT[phase]] || '')
+    $('connected').classList.toggle('on', !!s.connected)
+    $('connect').style.display = s.connected ? 'none' : ''
+    $('ver').textContent = `${t.version} ${s.version}`
+    $('path').textContent = s.data
+    const atEnd = logEl.scrollTop + logEl.clientHeight >= logEl.scrollHeight - 8
+    logEl.textContent = s.log.join('\n')
+    if (atEnd) logEl.scrollTop = logEl.scrollHeight
+  }
+  const refresh = () => invoke('farm_status').then(render).catch(() => {})
+  refresh()
+  setInterval(refresh, 2000)
+  listen('farm-phase', refresh)
+  listen('farm-connected', refresh)
+  listen('farm-log', (e) => { logEl.textContent += (logEl.textContent ? '\n' : '') + e.payload; logEl.scrollTop = logEl.scrollHeight })
+
+  $('open').onclick = () => invoke('open_link', { path: '/tools/farm' })
+  $('connect').onclick = () => invoke('open_link', { path: '/tools/farm#app' })
+  $('done').onclick = () => invoke('open_place', { place: 'done' })
+  $('folder').onclick = () => invoke('open_place', { place: 'data' })
+  $('restart').onclick = () => invoke('farm_restart').then(refresh)
+  $('code').onclick = () => invoke('open_link', { path: 'https://github.com/tyne-pro/video-farm' })
+</script>
+</body>
+</html>
