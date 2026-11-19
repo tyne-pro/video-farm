@@ -4,6 +4,7 @@
   "version": "1.0.0",
   "description": "Desktop app of the tyne.pro video farm (Tauri)",
   "scripts": {
+    "tauri": "tauri",
     "prepare-resources": "node scripts/prepare-resources.mjs",
     "dev": "tauri dev",
     "build": "tauri build"
