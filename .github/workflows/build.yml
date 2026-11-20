@@ -1,6 +1,7 @@
-# Builds the farm app for macOS (Apple Silicon) and Windows (x64), publishes the installers as a GitHub release
-# of this repository (author: github-actions) and checks the Windows installer on the runner:
-# silent install, the app starts and prepares the generator, the self-test makes a short clip.
+# Builds the farm app for macOS (Apple Silicon) and Windows (x64) and checks the Windows installer on the
+# runner: silent install, the app starts and prepares the generator, the self-test makes a short clip and a
+# voiceover. The release is created as a DRAFT during the build; a separate `publish` job makes it public only
+# after every build and the Windows check passed — so a broken build never goes public.
 # A release is made once per app version.
 name: Build the app
 
@@ -66,7 +67,8 @@ jobs:
           tagName: v__VERSION__
           releaseName: 'Ферма роликів __VERSION__'
           releaseBody: 'Installers of the tyne.pro video farm. Install guide and the VirusTotal check: https://cp.tyne.pro/tools/farm'
-          releaseDraft: false
+          # Draft during the build; the publish job makes it public only after the Windows check passes
+          releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
 
@@ -117,3 +119,19 @@ jobs:
           name: windows-check
           path: check/
           if-no-files-found: ignore
+
+  # Make the draft release public only after every build leg and the Windows check passed.
+  # If the Windows self-test (incl. voiceover) fails, the build job fails, this job is skipped,
+  # and the release stays a draft — a broken build never reaches testers.
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION=$(jq -r .version app/src-tauri/tauri.conf.json)
+          echo "Publishing v$VERSION"
+          gh release edit "v$VERSION" --draft=false --latest --repo "$GITHUB_REPOSITORY"
