@@ -168,7 +168,9 @@ export function Editor({ id }: { id: string }) {
 
   // Фінальна збірка 1080p на компʼютері
   const startRender = async () => {
-    if (save !== 'ok') await api.save(id, { clips, music, title }).catch(() => {})
+    // Сначала сохраняем всё, что сейчас в редакторе (монтаж, тексты, стиль), и только потом собираем
+    const body = { clips, music, title, plan: plan && { captions: plan.captions, headings: plan.headings, hook: plan.hook }, style }
+    await api.save(id, body).then(() => { lastSaved.current = JSON.stringify(body); setSave('ok') }).catch(() => {})
     try {
       const job = await api.render(id)
       setRender({ job: job.id, progress: job.progress })
@@ -208,7 +210,7 @@ export function Editor({ id }: { id: string }) {
         right={tierName(tier) && <span className="pill ok"><span className="dot" />{t('connected')} · {tierName(tier)}</span>}
       />
       <div className="bar">
-        <input className="title-in" value={title} aria-label="Назва" onChange={(e) => set({ title: e.target.value })} size={Math.min(46, Math.max(12, title.length + 2))} />
+        <input className="title-in" value={title}  aria-label={t('clipName')} onChange={(e) => set({ title: e.target.value })} size={Math.min(46, Math.max(12, title.length + 2))} />
         <span className={`saved ${save === 'busy' ? 'busy' : save === 'bad' ? 'bad' : ''}`} role="status">● {t(save === 'busy' ? 'saving' : save === 'bad' ? 'notSaved' : 'saved')}</span>
         <span className="spacer" />
         <button className="btn ic" onClick={() => history().undo()} title={t('undoT')} aria-label={t('undoT')}>↶</button>
@@ -287,7 +289,7 @@ export function Editor({ id }: { id: string }) {
               <>
                 <h3>{t('caption')}</h3>
                 <label htmlFor="cap">{t('text')}</label>
-                <textarea id="cap" className="field" rows={3} key={`cap-${i}-${c.words.length}`} defaultValue={captionText(c)}
+                <textarea id="cap" className="field" rows={3} key={`cap-${i}-${captionText(c)}`} defaultValue={captionText(c)}
                   onBlur={(e) => set({ plan: setCaptionText(plan, i, e.target.value) })} />
                 <div className="words">
                   {c.words.map((w, wi) => <button key={wi} className={`chip${w.accent ? ' on' : ''}`} onClick={() => set({ plan: toggleAccent(plan, i, wi) })}>{w.text}</button>)}
