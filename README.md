@@ -5,7 +5,7 @@
 - Монтаж іде на вашому комп’ютері. Відео нікуди не завантажуються.
 - Програма слухає лише цей комп’ютер (127.0.0.1:4747).
 - Усередині вже є Node.js, ffmpeg і генератор. Перелік бібліотек і їхні ліцензії — у NOTICE.txt усередині програми.
-- Версія генератора **e7d248f7bf14**. Результат перевірки VirusTotal показано на сторінці інструмента.
+- Версія генератора **9021f57e3d93**. Результат перевірки VirusTotal показано на сторінці інструмента.
 
 ### Mac (Apple Silicon)
 
@@ -35,7 +35,7 @@ irm https://raw.githubusercontent.com/tyne-pro/video-farm/main/install.ps1 | iex
 - Editing runs on your computer. Videos are not uploaded anywhere.
 - The app listens only on this computer (127.0.0.1:4747).
 - It already carries Node.js, ffmpeg and the generator. The libraries and their licences are listed in NOTICE.txt inside the app.
-- Generator version **e7d248f7bf14**. The VirusTotal result is shown on the tool page.
+- Generator version **9021f57e3d93**. The VirusTotal result is shown on the tool page.
 
 ### Mac (Apple Silicon)
 

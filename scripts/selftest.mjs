@@ -6,6 +6,7 @@ import path from 'node:path'
 import { ensureBrowser } from '@remotion/renderer'
 import { ensureSfx, probe, ffmpeg } from '../lib/media.mjs'
 import { ensureWhisper, transcribeWords } from '../lib/transcribe.mjs'
+import { synthesize } from '../lib/tts.mjs'
 import { renderProject, DATA, CACHE } from '../lib/pipeline.mjs'
 import { storeProject } from '../lib/projects.mjs'
 
@@ -53,6 +54,18 @@ await step('clip', async () => {
   if (p.width !== 1080 || p.height !== 1920 || p.duration < 3.5) throw new Error(`unexpected clip ${p.width}x${p.height} ${p.duration}s`)
   fs.rmSync(dir, { recursive: true, force: true })
   return { file: path.basename(out), width: p.width, height: p.height, duration: Math.round(p.duration * 10) / 10 }
+})
+await step('voiceover', async () => {
+  // Озвучка (Piper): синтез короткой фразы. Проверяет движок на этой системе —
+  // на Windows это работает после установки Python хуком инсталлятора. Голос Лада — лёгкая модель.
+  const dir = path.join(DATA, 'work', 'selftest-vo')
+  fs.mkdirSync(dir, { recursive: true })
+  const out = path.join(dir, 'voiceover.wav')
+  await synthesize({ cacheDir: CACHE, dataDir: DATA, text: 'Ферма роликів tyne. Тест озвучки.', voice: 'uk_lada', outWav: out, log() {} })
+  const p = await probe(out)
+  if (!p.duration || p.duration < 0.5) throw new Error(`voiceover too short: ${p.duration}s`)
+  fs.rmSync(dir, { recursive: true, force: true })
+  return { sec: Math.round(p.duration * 10) / 10 }
 })
 
 report.ok = Object.values(report.steps).every((s) => s.ok)
