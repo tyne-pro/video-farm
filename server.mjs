@@ -154,11 +154,11 @@ const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.ttf': 'font/ttf', '.otf': 'font/otf', '.woff': 'font/woff', '.woff2': 'font/woff2',
 }
 
-function sendFile(req, res, file, { download } = {}) {
+function sendFile(req, res, file, { download, cache } = {}) {
   if (!fs.existsSync(file)) return json(res, 404, { error: 'no file' })
   const stat = fs.statSync(file)
   const type = MIME[path.extname(file).toLowerCase()] || 'application/octet-stream'
-  const headers = { 'Content-Type': type, 'Accept-Ranges': 'bytes' }
+  const headers = { 'Content-Type': type, 'Accept-Ranges': 'bytes', ...(cache ? { 'Cache-Control': cache } : {}) }
   if (download) headers['Content-Disposition'] = `attachment; filename*=UTF-8''${encodeURIComponent(path.basename(file))}`
   const range = req.headers.range?.match(/bytes=(\d*)-(\d*)/)
   if (range) {
@@ -311,8 +311,9 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && parts[0] === 'studio') {
       if (!fs.existsSync(STUDIO)) return json(res, 404, { error: 'studio not built' })
       const file = path.resolve(STUDIO, ...parts.slice(1))
-      if (file.startsWith(STUDIO + path.sep) && fs.existsSync(file) && fs.statSync(file).isFile()) return sendFile(req, res, file)
-      return sendFile(req, res, path.join(STUDIO, 'index.html'))
+      // Файлы сборки с хешем в имени не меняются; страницу берём свежую после каждого обновления программы
+      if (file.startsWith(STUDIO + path.sep) && fs.existsSync(file) && fs.statSync(file).isFile()) return sendFile(req, res, file, { cache: /[\\/]assets[\\/]/.test(file) ? 'public, max-age=31536000, immutable' : 'no-cache' })
+      return sendFile(req, res, path.join(STUDIO, 'index.html'), { cache: 'no-cache' })
     }
 
     if (parts[0] === 'api' && parts[1] === 'projects') return projectsApi(req, res, url, parts)
