@@ -125,6 +125,9 @@ a { color: inherit; }
 .tracks { position: relative; display: grid; grid-template-columns: 112px minmax(0, 1fr); min-height: 0; overflow: hidden; }
 .labels { border-right: 1px solid var(--rule); }
 .lbl { display: flex; align-items: center; gap: 8px; padding: 0 14px; font-size: 12px; color: var(--mut); font-weight: 600; border-bottom: 1px solid var(--rule); }
+.lbl-x { margin-left: auto; width: 20px; height: 20px; flex: none; display: inline-flex; align-items: center; justify-content: center; border-radius: 6px; border: 1px solid var(--rule); background: transparent; color: rgb(var(--red)); font-size: 11px; cursor: pointer; transition: border-color .15s var(--ease), background-color .15s var(--ease); }
+.lbl-x:hover { border-color: rgb(var(--red) / .6); background: rgb(var(--red) / .08); }
+.lbl-x:active { transform: scale(.94); }
 .scroller { position: relative; overflow-x: auto; overflow-y: hidden; min-width: 0; }
 .scroller::-webkit-scrollbar { height: 10px; }
 .scroller::-webkit-scrollbar-thumb { background: var(--rule); border-radius: 10px; }

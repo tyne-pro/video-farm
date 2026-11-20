@@ -274,7 +274,12 @@ export function Timeline({ project, media, total, seek, split, dup, del, onDropF
           <div className="lbl" style={{ height: ROWS.ruler }} />
           <div className="lbl" style={{ height: ROWS.video }}>🎞 {t('video')}</div>
           <div className="lbl" style={{ height: ROWS.text + 8 }}>Т {t('text')}</div>
-          <div className="lbl" style={{ height: ROWS.stickers }}>☺ {t('stickers')}</div>
+          <div className="lbl" style={{ height: ROWS.stickers }}>☺ {t('stickers')}
+            {(plan.memes?.length ?? 0) > 0 && (
+              <button type="button" className="lbl-x" title={t('clearStickers')} aria-label={t('clearStickers')}
+                onClick={() => set({ plan: { ...plan, memes: [] } })}>✕</button>
+            )}
+          </div>
           {project.voice && <div className="lbl" style={{ height: ROWS.voice }}>🎙 {t('voice')}</div>}
           {voiceover?.wav && <div className="lbl" style={{ height: ROWS.vo }}>🎤 {t('voTab')}</div>}
           {hasMusic && <div className="lbl" style={{ height: ROWS.music }}>♪ {t('music')}</div>}

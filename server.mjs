@@ -568,6 +568,7 @@ const server = http.createServer(async (req, res) => {
         hook: String(body.hook || '').trim().split(/\s+/).slice(0, 10).join(' ').slice(0, 120),
         notes: String(body.notes || '').trim().slice(0, 1500),
         emoji: String(body.emoji || '').slice(0, 8),
+        stickers: body.stickers !== false,
         // Свои стикерпаки Telegram: ссылка t.me/addstickers/<имя> или имя, до 5 паков (Premium и Pro)
         adultMemes: body.adultMemes === true,
         stickerPacks: (Array.isArray(body.stickerPacks) ? body.stickerPacks : []).map((s) => String(s).trim().replace(/^.*addstickers\//, '').replace(/[/?#].*$/, '')).filter((s) => /^[A-Za-z0-9_]{3,64}$/.test(s)).slice(0, 5),

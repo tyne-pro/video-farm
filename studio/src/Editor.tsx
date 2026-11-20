@@ -67,7 +67,7 @@ export function Editor({ id }: { id: string }) {
   const lastSaved = useRef<string>('')
   useEffect(() => {
     if (!project) return
-    const body = JSON.stringify({ clips, music, title, plan: plan && { captions: plan.captions, headings: plan.headings, hook: plan.hook }, style, voiceover })
+    const body = JSON.stringify({ clips, music, title, plan: plan && { captions: plan.captions, headings: plan.headings, hook: plan.hook, memes: plan.memes }, style, voiceover })
     if (!lastSaved.current) { lastSaved.current = body; return }
     if (body === lastSaved.current) return
     setSave('busy')
@@ -186,7 +186,7 @@ export function Editor({ id }: { id: string }) {
   // Фінальна збірка 1080p на компʼютері
   const startRender = async () => {
     // Сначала сохраняем всё, что сейчас в редакторе (монтаж, тексты, стиль), и только потом собираем
-    const body = { clips, music, title, plan: plan && { captions: plan.captions, headings: plan.headings, hook: plan.hook }, style, voiceover }
+    const body = { clips, music, title, plan: plan && { captions: plan.captions, headings: plan.headings, hook: plan.hook, memes: plan.memes }, style, voiceover }
     await api.save(id, body).then(() => { lastSaved.current = JSON.stringify(body); setSave('ok') }).catch(() => {})
     try {
       const job = await api.render(id)
