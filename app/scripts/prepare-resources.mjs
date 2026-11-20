@@ -66,8 +66,13 @@ if (os === 'mac') {
   }
 } else {
   const plat = os === 'win' ? (arm ? 'winarm64' : 'win64') : (arm ? 'linuxarm64' : 'linux64')
-  const archive = `ffmpeg-n7.1-latest-${plat}-gpl-7.1.${os === 'win' ? 'zip' : 'tar.xz'}`
-  const file = await download(`https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/${archive}`, join(tmp, archive))
+  // File names carry the FFmpeg version, which changes: take the newest release build (static, GPL) from the list
+  const rel = await (await fetch('https://api.github.com/repos/BtbN/FFmpeg-Builds/releases/tags/latest', { headers: { Accept: 'application/vnd.github+json', ...(process.env.GITHUB_TOKEN ? { Authorization: `Bearer ${process.env.GITHUB_TOKEN}` } : {}) } })).json()
+  const re = new RegExp(`^ffmpeg-n(\\d+)\\.(\\d+)-latest-${plat}-gpl-[\\d.]+\\.(zip|tar\\.xz)$`)
+  const asset = (rel.assets || []).filter((a) => re.test(a.name)).sort((x, y) => { const [, a1, a2] = x.name.match(re); const [, b1, b2] = y.name.match(re); return (b1 - a1) || (b2 - a2) })[0]
+  if (!asset) throw new Error(`no ffmpeg build for ${plat}`)
+  const archive = asset.name
+  const file = await download(asset.browser_download_url, join(tmp, archive))
   untar(file, join(tmp, 'ffmpeg'))
   for (const tool of ['ffmpeg', 'ffprobe']) place(find(join(tmp, 'ffmpeg'), `${tool}${ext}`), tool)
 }

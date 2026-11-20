@@ -54,6 +54,7 @@ jobs:
         working-directory: app
         env:
           FARM_GENERATOR_DIR: '..'
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           npm ci --no-audit --no-fund
           node scripts/prepare-resources.mjs ${{ matrix.target }}
