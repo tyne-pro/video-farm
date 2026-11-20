@@ -10,12 +10,13 @@ import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
 import { spawn } from 'node:child_process'
-import { runPipeline, renderProject, ROOT, DATA, Cancelled } from './lib/pipeline.mjs'
+import { runPipeline, renderProject, ROOT, DATA, CACHE, Cancelled } from './lib/pipeline.mjs'
 import { totalDuration } from './remotion/project.js'
 import { FONT } from './remotion/style.js'
 import { fontFaces } from './lib/gfonts.mjs'
 import { readSettings, writeSettings, outDir, addEvent, listEvents, diskUsage, clearCache, supportReport, techLog, systemChecks, humanSize, freeSpace, NEED_BYTES } from './lib/desk.mjs'
-import { loadProject, findOutput, listProjects, trashItem, restoreItem, purgeTrash, reveal, applyEditorChanges, ensureProxies, mediaInfo, projectDir, projectPaths } from './lib/projects.mjs'
+import { loadProject, storeProject, findOutput, listProjects, trashItem, restoreItem, purgeTrash, reveal, applyEditorChanges, ensureProxies, mediaInfo, projectDir, projectPaths } from './lib/projects.mjs'
+import { generateVoiceover, synthesize, VOICES, DEMO_VOICE, voiceById, voiceDownloaded, customVoices, ttsReady } from './lib/tts.mjs'
 import { applyEdits } from './lib/plan.mjs'
 import { loadMemes } from './lib/memes.mjs'
 import { PORTAL, savedKey, portalMe, portalRefund } from './lib/portal.mjs'
@@ -300,6 +301,100 @@ const LANG = (url) => (LANGS.has(url.searchParams.get('lang')) ? url.searchParam
 let systemCache = null
 let repairing = null
 
+// --- Озвучка (TTS): голоса, превью, генерация ---------------------------------
+
+const TTS_SAMPLE = {
+  uk: 'Привіт! Це приклад озвучки для ферми роликів.',
+  ru: 'Привет! Это пример озвучки для фермы роликов.',
+  en: 'Hi! This is a voiceover sample for the video farm.',
+}
+
+/** Доступен ли голос на этом тарифе */
+function voiceAllowed(tier, voice) {
+  if (!voice) return false
+  if (voice.startsWith('custom:')) return tier === 'pro' && customVoices(DATA).some((v) => v.id === voice)
+  if (!voiceById(voice)) return false
+  if (tier === 'demo') return voice === DEMO_VOICE
+  return true // premium и pro — все встроенные
+}
+
+/** Текст из субтитров проекта (для textSource = subtitles) */
+function subtitleText(project) {
+  const caps = project.plan?.captions || []
+  return caps.map((c) => (c.words || []).map((w) => w.text).join(' ')).join(' ').replace(/\s+/g, ' ').trim()
+}
+
+async function ttsApi(req, res, url, parts) {
+  const me = await currentMe()
+  const tier = me?.tier || 'demo'
+
+  if (req.method === 'GET' && parts[1] === 'voices') {
+    const built = VOICES.map((v) => ({ id: v.id, name: v.name, lang: v.lang, gender: v.gender, quality: v.quality, desc: v.desc, mb: v.mb, downloaded: voiceDownloaded(CACHE, v.id) }))
+    let voices = built
+    if (tier === 'demo') voices = built.filter((v) => v.id === DEMO_VOICE)
+    else if (tier === 'pro') voices = [...built, ...customVoices(DATA).map((v) => ({ id: v.id, name: v.name, lang: 'custom', gender: '', quality: 'custom', desc: v.desc, mb: 0, downloaded: true }))]
+    return json(res, 200, { voices, tier, ready: ttsReady(CACHE), demoVoice: DEMO_VOICE })
+  }
+
+  if (req.method === 'POST' && parts[1] === 'preview') {
+    const body = await readJson(req)
+    const voice = String(body?.voice || '')
+    if (!voiceAllowed(tier, voice)) return json(res, 403, { error: 'voice_locked' })
+    const info = voiceById(voice)
+    const text = String(body?.text || '').trim().slice(0, 200) || TTS_SAMPLE[info?.lang] || TTS_SAMPLE.uk
+    const dir = path.join(CACHE, 'tts')
+    fs.mkdirSync(dir, { recursive: true })
+    const out = path.join(dir, `preview-${voice.replace(/[^\w]/g, '_')}.wav`)
+    try {
+      await synthesize({ cacheDir: CACHE, dataDir: DATA, text, voice, speed: 1, pitch: 0, outWav: out, log: () => {} })
+    } catch (e) {
+      return json(res, 500, { error: 'synth', detail: String(e?.message || e).slice(0, 200) })
+    }
+    return json(res, 200, { src: assetUrl(out) })
+  }
+
+  if (req.method === 'POST' && parts[1] === 'generate') {
+    const body = await readJson(req)
+    let project
+    try { project = loadProject(DATA, String(body?.projectId || '')) } catch { project = null }
+    if (!project) return json(res, 404, { error: 'no_project' })
+    const voice = String(body?.voice || '')
+    if (!voiceAllowed(tier, voice)) return json(res, 403, { error: 'voice_locked' })
+    let text = String(body?.text || '')
+    if (body?.textSource === 'subtitles') text = subtitleText(project)
+    text = text.replace(/\s+/g, ' ').trim().slice(0, 5000)
+    if (!text) return json(res, 400, { error: 'empty_text' })
+    const info = voiceById(voice)
+    const lang = info?.lang && info.lang !== 'custom' ? info.lang : (LANGS.has(body?.lang) ? body.lang : 'uk')
+    const dir = projectDir(DATA, project.id)
+    const out = path.join(dir, 'voiceover.wav')
+    const speed = Math.max(0.5, Math.min(2, Number(body?.speed) || 1))
+    const pitch = Math.max(-6, Math.min(6, Number(body?.pitch) || 0))
+    let result
+    try {
+      result = await generateVoiceover({
+        cacheDir: CACHE, dataDir: DATA, workDir: dir, text, voice, lang, speed, pitch, outWav: out,
+        autoSubtitles: body?.autoSubtitles !== false, log: () => {},
+      })
+    } catch (e) {
+      return json(res, 500, { error: 'synth', detail: String(e?.message || e).slice(0, 300) })
+    }
+    project.voiceover = {
+      enabled: true,
+      textSource: body?.textSource === 'subtitles' ? 'subtitles' : 'manual',
+      text, voice, lang, speed, pitch,
+      volume: body?.volume == null ? 1 : Math.max(0, Math.min(1.5, Number(body.volume))),
+      mode: body?.mode === 'overlay' ? 'overlay' : 'replace',
+      autoSubtitles: body?.autoSubtitles !== false,
+      wav: 'voiceover.wav', durationMs: result.durationMs, captions: result.captions,
+    }
+    storeProject(DATA, project)
+    return json(res, 200, { voiceover: project.voiceover, src: assetUrl(out), durationMs: result.durationMs, captions: result.captions })
+  }
+
+  return json(res, 404, { error: 'not found' })
+}
+
 async function deskApi(req, res, url, parts) {
   const lang = LANG(url)
   // Текущий ролик, очередь, пауза — окно спрашивает раз в секунду
@@ -421,6 +516,7 @@ const server = http.createServer(async (req, res) => {
       return sendFile(req, res, path.join(STUDIO, 'index.html'), { cache: 'no-cache' })
     }
 
+    if (parts[0] === 'tts') return ttsApi(req, res, url, parts)
     if (parts[0] === 'api' && parts[1] === 'projects') return projectsApi(req, res, url, parts)
     if (parts[0] === 'api' && ['queue', 'system', 'events', 'cache', 'report', 'techlog', 'settings', 'repair'].includes(parts[1])) return deskApi(req, res, url, parts)
 

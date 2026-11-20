@@ -5,7 +5,7 @@ import { setCaptionEdge, shiftCaption, shiftHeading } from './text'
 import { fmt, t } from './i18n'
 import { beginGesture, useEdit, usePlay } from './store'
 
-const ROWS = { ruler: 26, video: 64, text: 30, stickers: 30, voice: 44, music: 40 }
+const ROWS = { ruler: 26, video: 64, text: 30, stickers: 30, voice: 44, music: 40, vo: 40 }
 const SNAP_PX = 8
 const TILE_W = 54 * ((ROWS.video - 12) / 96) // кадр полоски 54×96, вписаний у висоту кліпу
 
@@ -52,6 +52,7 @@ export function Timeline({ project, media, total, seek, split, dup, del, onDropF
 }) {
   const clips = useEdit((s) => s.clips)
   const music = useEdit((s) => s.music)
+  const voiceover = useEdit((s) => s.voiceover)
   const plan = useEdit((s) => s.plan) || project.plan
   const selected = useEdit((s) => s.selected)
   const set = useEdit((s) => s.set)
@@ -275,6 +276,7 @@ export function Timeline({ project, media, total, seek, split, dup, del, onDropF
           <div className="lbl" style={{ height: ROWS.text + 8 }}>Т {t('text')}</div>
           <div className="lbl" style={{ height: ROWS.stickers }}>☺ {t('stickers')}</div>
           {project.voice && <div className="lbl" style={{ height: ROWS.voice }}>🎙 {t('voice')}</div>}
+          {voiceover?.wav && <div className="lbl" style={{ height: ROWS.vo }}>🎤 {t('voTab')}</div>}
           {hasMusic && <div className="lbl" style={{ height: ROWS.music }}>♪ {t('music')}</div>}
         </div>
         <div className="scroller" ref={scroller} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}>
@@ -354,6 +356,16 @@ export function Timeline({ project, media, total, seek, split, dup, del, onDropF
                 </div>
               ))}
             </div>}
+
+            {/* Озвучка: голос за кадром грає з початку ролика */}
+            {voiceover?.wav && (
+              <div className="lane" style={{ height: ROWS.vo }} onPointerDown={onScrubDown}>
+                <div className="clip vo-clip" style={{ left: 0, width: Math.max(8, Math.min((voiceover.durationMs || 0) / 1000, total) * k) }}
+                  onPointerDown={(e) => { e.stopPropagation(); seek(0) }} title={t('voTab')}>
+                  <span className="cap">🎤 {fmt(Math.min((voiceover.durationMs || 0) / 1000, total), true)}</span>
+                </div>
+              </div>
+            )}
 
             {hasMusic && (
               <div className="lane" style={{ height: ROWS.music }} onPointerDown={onScrubDown}>

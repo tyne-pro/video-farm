@@ -359,13 +359,17 @@ export const Farm = (props) => {
       ))}
       {clips && (props.voiceClips || []).map((v, i) => (
         <Sequence key={`v${i}`} from={f(v.start)} durationInFrames={Math.max(1, f(v.start + v.dur) - f(v.start))} layout="none">
-          <Audio src={v.src} startFrom={f(v.srcIn)} volume={1} />
+          <Audio src={v.src} startFrom={f(v.srcIn)} volume={v.volume ?? 1} />
         </Sequence>
       ))}
       {clips && props.music && (
         <Sequence from={f(props.music.start)} durationInFrames={Math.max(1, f(props.music.dur))} layout="none">
           <Audio src={props.music.src} startFrom={f(props.music.srcIn)} loop={!!props.music.loop} volume={props.music.volume} />
         </Sequence>
+      )}
+      {/* Озвучка: голос за кадром играет с начала ролика поверх дорожек */}
+      {clips && props.voiceover && (
+        <Audio src={props.voiceover.src} volume={props.voiceover.volume ?? 1} />
       )}
       {!clips && !slides && videoSrc && <MainVideo src={videoSrc} zoom={zoom} landscape={landscape} />}
       {!clips && slides && screens.map((sc, i) => (
@@ -377,6 +381,10 @@ export const Farm = (props) => {
       {slides && <Grain />}
 
       <Captions captions={plan.captions} box={box.captions} color={textColor} hookEnd={plan.hook.end} font={own || subFam} st={st} />
+      {/* Авто-субтитры озвучки: их время уже в финале ролика (hookEnd=0) */}
+      {(props.voiceoverCaptions || []).length > 0 && (
+        <Captions captions={props.voiceoverCaptions} box={box.captions} color={textColor} hookEnd={0} font={own || subFam} st={st} />
+      )}
 
       {plan.headings.map((h, i) => (
         <Sequence key={`h${i}`} from={f(h.start)} durationInFrames={f(h.dur)} layout="none">

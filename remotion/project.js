@@ -114,14 +114,24 @@ export function projectToProps(project, { url, memes = {}, sfx = {}, musicFallba
   const durationSec = Math.max(0.5, totalDuration(project))
   // Музыка «до конца ролика» растягивается сама, пока её конец не подрезали вручную
   const music = project.music ? { ...project.music, dur: project.music.toEnd ? Math.max(0.2, durationSec - (project.music.start || 0)) : project.music.dur } : null
+  // Озвучка (голос за кадром): отдельная дорожка в финальном времени, играет с начала.
+  // replace — заглушает оригинальный голос и притемняет музыку; overlay — оставляет их тише.
+  const vo = project.voiceover && project.voiceover.enabled && project.voiceover.wav ? project.voiceover : null
+  const voiceVol = vo ? (vo.mode === 'overlay' ? 0.22 : 0) : 1
+  const musicDuck = vo ? (vo.mode === 'overlay' ? 0.45 : 0.5) : 1
+  const plan = mapPlan(project)
+  // Авто-субтитры озвучки заменяют обычные; в режиме replace старые субтитры тоже убираем (аудио другое)
+  if (vo && (vo.autoSubtitles || vo.mode === 'replace')) plan.captions = []
   return {
     mode: project.mode,
     durationSec,
-    plan: mapPlan(project),
+    plan,
     landscape: !!project.landscape,
     clips: placed.map((c) => ({ id: c.id, kind: c.kind, start: c.start, dur: c.dur, srcIn: c.srcIn || 0, bg: c.bg ?? 0, src: c.src ? url(c.src) : null })),
-    voiceClips: project.voice ? placed.filter((c) => c.kind === 'main' || c.voice !== false).map((c) => ({ start: c.start, dur: c.dur, srcIn: c.base, src: url(project.voice) })) : [],
-    music: music?.src ? { src: url(music.src), start: music.start || 0, srcIn: music.srcIn || 0, dur: music.dur, volume: music.volume ?? 0.35, loop: !!music.loop } : (musicFallback ? { src: musicFallback, start: 0, srcIn: 0, dur: durationSec, volume: project.mode === 'cut' ? 0.05 : 0.35, loop: true } : null),
+    voiceClips: (project.voice && voiceVol > 0) ? placed.filter((c) => c.kind === 'main' || c.voice !== false).map((c) => ({ start: c.start, dur: c.dur, srcIn: c.base, src: url(project.voice), volume: voiceVol })) : [],
+    voiceover: vo ? { src: url(vo.wav), volume: vo.volume ?? 1 } : null,
+    voiceoverCaptions: (vo && vo.autoSubtitles && Array.isArray(vo.captions)) ? vo.captions : [],
+    music: music?.src ? { src: url(music.src), start: music.start || 0, srcIn: music.srcIn || 0, dur: music.dur, volume: (music.volume ?? 0.35) * musicDuck, loop: !!music.loop } : (musicFallback ? { src: musicFallback, start: 0, srcIn: 0, dur: durationSec, volume: (project.mode === 'cut' ? 0.05 : 0.35) * musicDuck, loop: true } : null),
     sfx,
     memes,
     captionColor: captionColor || project.captionColor || '#FFFFFF',

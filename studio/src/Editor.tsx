@@ -4,8 +4,9 @@ import { Player, type PlayerRef } from '@remotion/player'
 import { Farm } from '../../remotion/Farm.jsx'
 import { projectToProps, layout, totalDuration, splitAt, removeClip, duplicateClip, newId } from '../../remotion/project.js'
 import { resolveStyle } from '../../remotion/style.js'
-import { api, ApiError, CABINET, downloadUrl, fontFaces, originalUrl, type Clip, type Face, type Media, type Project } from './api'
+import { api, ApiError, CABINET, downloadUrl, fontFaces, originalUrl, voiceoverUrl, type Clip, type Face, type Media, type MediaInfo, type Project, type Voiceover } from './api'
 import { StylePanel } from './StylePanel'
+import { VoicePanel } from './VoicePanel'
 import { captionText, removeCaption, removeHeading, setCaptionText, setHeadingText, setHookText, toggleAccent } from './text'
 import { fmt, lang, t } from './i18n'
 import { beginGesture, history, useEdit, usePlay } from './store'
@@ -28,7 +29,7 @@ export function Editor({ id }: { id: string }) {
   const [pick, setPick] = useState<string | null>(null)
   const [ownFont, setOwnFont] = useState(false)
   const [faces, setFaces] = useState<Record<string, Face[]>>({})
-  const [tab, setTab] = useState<'sel' | 'style'>('style')
+  const [tab, setTab] = useState<'sel' | 'style' | 'voice'>('style')
   const player = useRef<PlayerRef>(null)
 
   const clips = useEdit((s) => s.clips)
@@ -37,6 +38,7 @@ export function Editor({ id }: { id: string }) {
   const selected = useEdit((s) => s.selected)
   const plan = useEdit((s) => s.plan)
   const style = useEdit((s) => s.style)
+  const voiceover = useEdit((s) => s.voiceover)
   const set = useEdit((s) => s.set)
   const select = useEdit((s) => s.select)
   const now = usePlay((s) => s.t)
@@ -47,8 +49,13 @@ export function Editor({ id }: { id: string }) {
     let alive = true
     api.get(id).then((d) => {
       if (!alive) return
-      setProject(d.project); setMedia(d.media); setTier(d.tier); setSfx(d.sfx); setOwnFont(!!d.ownFont)
-      useEdit.setState({ clips: d.project.clips, music: d.project.music, title: d.project.title, plan: d.project.plan, style: d.project.style || null, selected: null })
+      setProject(d.project); setTier(d.tier); setSfx(d.sfx); setOwnFont(!!d.ownFont)
+      // Голос за кадром: его файл не в «Мої файли», добавляем адрес вручную для превью
+      const withVoice: Media = d.project.voiceover?.wav
+        ? { ...d.media, 'voiceover.wav': { preview: voiceoverUrl(id), full: voiceoverUrl(id), strip: null, peaks: null, kind: 'video', len: null, inBin: false } as MediaInfo }
+        : d.media
+      setMedia(withVoice)
+      useEdit.setState({ clips: d.project.clips, music: d.project.music, title: d.project.title, plan: d.project.plan, style: d.project.style || null, voiceover: d.project.voiceover || null, selected: null })
       history().clear()
       document.title = `${d.project.title} · tyne.pro`
     }).catch((e) => setError(e instanceof ApiError && e.status === 404 ? t('notFound') : t('noApp')))
@@ -60,7 +67,7 @@ export function Editor({ id }: { id: string }) {
   const lastSaved = useRef<string>('')
   useEffect(() => {
     if (!project) return
-    const body = JSON.stringify({ clips, music, title, plan: plan && { captions: plan.captions, headings: plan.headings, hook: plan.hook }, style })
+    const body = JSON.stringify({ clips, music, title, plan: plan && { captions: plan.captions, headings: plan.headings, hook: plan.hook }, style, voiceover })
     if (!lastSaved.current) { lastSaved.current = body; return }
     if (body === lastSaved.current) return
     setSave('busy')
@@ -68,10 +75,10 @@ export function Editor({ id }: { id: string }) {
       api.save(id, JSON.parse(body)).then(() => { lastSaved.current = body; setSave('ok') }).catch(() => setSave('bad'))
     }, 600)
     return () => clearTimeout(timer)
-  }, [clips, music, title, plan, style, project, id])
+  }, [clips, music, title, plan, style, voiceover, project, id])
 
   const total = useMemo(() => totalDuration({ clips }), [clips])
-  const edit = useMemo(() => (project && plan ? { ...project, clips, music, title, plan } : null), [project, clips, music, title, plan])
+  const edit = useMemo(() => (project && plan ? { ...project, clips, music, title, plan, voiceover } : null), [project, clips, music, title, plan, voiceover])
   // Стиль за поточним тарифом; шрифти — з цього компʼютера (програма бере їх із Google Fonts один раз)
   const resolved = useMemo(() => resolveStyle(style, tier), [style, tier])
   useEffect(() => {
@@ -148,6 +155,16 @@ export function Editor({ id }: { id: string }) {
     select(clipId)
   }, [fileClip, set, select])
 
+  // Голос за кадром сгенерирован (или убран): даём превью адрес файла озвучки
+  const onVoiceGenerated = useCallback((_vo: Voiceover | null, src: string) => {
+    setMedia((prev) => {
+      const next = { ...prev }
+      if (src) next['voiceover.wav'] = { preview: src, full: src, strip: null, peaks: null, kind: 'video', len: null, inBin: false }
+      else delete next['voiceover.wav']
+      return next
+    })
+  }, [])
+
   // Клавіші як у відеоредакторах
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
@@ -169,7 +186,7 @@ export function Editor({ id }: { id: string }) {
   // Фінальна збірка 1080p на компʼютері
   const startRender = async () => {
     // Сначала сохраняем всё, что сейчас в редакторе (монтаж, тексты, стиль), и только потом собираем
-    const body = { clips, music, title, plan: plan && { captions: plan.captions, headings: plan.headings, hook: plan.hook }, style }
+    const body = { clips, music, title, plan: plan && { captions: plan.captions, headings: plan.headings, hook: plan.hook }, style, voiceover }
     await api.save(id, body).then(() => { lastSaved.current = JSON.stringify(body); setSave('ok') }).catch(() => {})
     try {
       const job = await api.render(id)
@@ -264,9 +281,10 @@ export function Editor({ id }: { id: string }) {
         <aside className="panel r insp">
           <div className="tabs" role="tablist">
             <button role="tab" aria-selected={tab === 'style'} className={`chip${tab === 'style' ? ' on' : ''}`} onClick={() => setTab('style')}>{t('tabStyle')}</button>
+            <button role="tab" aria-selected={tab === 'voice'} className={`chip${tab === 'voice' ? ' on' : ''}`} onClick={() => setTab('voice')}>{t('voTab')}</button>
             <button role="tab" aria-selected={tab === 'sel'} className={`chip${tab === 'sel' ? ' on' : ''}`} onClick={() => setTab('sel')}>{t('tabSel')}</button>
           </div>
-          {tab === 'style' ? <StylePanel tier={tier} hasOwnFont={ownFont} /> : selected === 'hook' && plan ? (
+          {tab === 'voice' ? <VoicePanel tier={tier} projectId={id} hasSubs={(plan?.captions?.length || 0) > 0} onGenerated={onVoiceGenerated} /> : tab === 'style' ? <StylePanel tier={tier} hasOwnFont={ownFont} /> : selected === 'hook' && plan ? (
             <>
               <h3>{t('hookT')}</h3>
               <label htmlFor="hook">{t('text')}</label>

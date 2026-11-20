@@ -1,10 +1,10 @@
 import { create } from 'zustand'
 import { temporal } from 'zundo'
-import type { Clip, Music, Plan } from './api'
+import type { Clip, Music, Plan, Voiceover } from './api'
 import type { Style } from '../../remotion/style.js'
 
 // Монтаж — єдине джерело правди для плеєра, доріжок і автозбереження. Історія правок — для ⌘Z / ⇧⌘Z.
-export type Edit = { clips: Clip[]; music: Music | null; title: string; plan: Plan | null; style: Style | null }
+export type Edit = { clips: Clip[]; music: Music | null; title: string; plan: Plan | null; style: Style | null; voiceover: Voiceover | null }
 type State = Edit & {
   selected: string | null
   set: (patch: Partial<Edit>) => void
@@ -19,14 +19,15 @@ export const useEdit = create<State>()(
       title: '',
       plan: null,
       style: null,
+      voiceover: null,
       selected: null,
       set: (patch) => set(patch),
       select: (selected) => set({ selected }),
     }),
     {
       limit: 200,
-      partialize: (s) => ({ clips: s.clips, music: s.music, title: s.title, plan: s.plan, style: s.style }),
-      equality: (a, b) => a.clips === b.clips && a.music === b.music && a.title === b.title && a.plan === b.plan && a.style === b.style,
+      partialize: (s) => ({ clips: s.clips, music: s.music, title: s.title, plan: s.plan, style: s.style, voiceover: s.voiceover }),
+      equality: (a, b) => a.clips === b.clips && a.music === b.music && a.title === b.title && a.plan === b.plan && a.style === b.style && a.voiceover === b.voiceover,
     },
   ),
 )
@@ -42,13 +43,13 @@ export function beginGesture() {
   history().pause()
   return () => {
     const after = pickEdit(useEdit.getState())
-    if (after.clips === before.clips && after.music === before.music && after.title === before.title && after.plan === before.plan && after.style === before.style) { history().resume(); return }
+    if (after.clips === before.clips && after.music === before.music && after.title === before.title && after.plan === before.plan && after.style === before.style && after.voiceover === before.voiceover) { history().resume(); return }
     useEdit.setState(before)
     history().resume()
     useEdit.setState(after)
   }
 }
-const pickEdit = (s: Edit): Edit => ({ clips: s.clips, music: s.music, title: s.title, plan: s.plan, style: s.style })
+const pickEdit = (s: Edit): Edit => ({ clips: s.clips, music: s.music, title: s.title, plan: s.plan, style: s.style, voiceover: s.voiceover })
 
 // Плеєр: поточний час і стан (поза історією правок)
 export const usePlay = create<{ t: number; playing: boolean; set: (p: Partial<{ t: number; playing: boolean }>) => void }>((set) => ({
