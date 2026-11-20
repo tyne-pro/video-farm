@@ -4,13 +4,13 @@ export interface Clip { id: string; kind: ClipKind; src: string | null; srcIn: n
 export interface Placed extends Clip { start: number }
 export interface Music { src: string; start: number; srcIn: number; dur: number; volume: number; loop?: boolean; toEnd?: boolean; srcLen?: number | null }
 export interface Word { text: string; start: number; end: number; accent?: boolean }
-export interface Caption { start: number; end: number; words: Word[]; style?: string; pos?: string }
+export interface Caption { start: number; end: number; words: Word[]; style?: string; pos?: string; _i?: number; _whole?: boolean }
 export interface Span { start: number; dur: number }
 export interface Plan {
   hook: { end: number; chunks: string[][]; chunkDur: number; words?: string[] }
   captions: Caption[]
-  headings: (Span & { text: string })[]
-  memes: (Span & { id: string })[]
+  headings: (Span & { text: string; _i?: number })[]
+  memes: (Span & { id: string; _i?: number })[]
   zooms: (Span & { scale: number })[]
   sfx: { t: number; kind: string }[]
   palette?: string
@@ -28,6 +28,7 @@ export function mapPlan(project: ProjectLike): Plan
 export function projectToProps(project: ProjectLike, opts: {
   url: (src: string) => string; memes?: Record<string, { kind: string; src: string }>; sfx?: Record<string, string>
   musicFallback?: string | null; rollerSrc?: string | null; fontSrc?: string | null; captionColor?: string
+  style?: unknown; fontFaces?: { hook: unknown[] | null; sub: unknown[] | null } | null
 }): Record<string, unknown>
 export function splitAt(clips: Clip[], t: number): Clip[]
 export function trimClip(clips: Clip[], id: string, edge: 'in' | 'out', delta: number, opts?: { maxLen?: number }): Clip[]

@@ -3,7 +3,10 @@ import { Player, type PlayerRef } from '@remotion/player'
 // Та сама композиція, що збирає фінал на компʼютері: що бачиш у превʼю, те й отримаєш
 import { Farm } from '../../remotion/Farm.jsx'
 import { projectToProps, layout, totalDuration, splitAt, removeClip, duplicateClip, newId } from '../../remotion/project.js'
-import { api, ApiError, CABINET, downloadUrl, originalUrl, type Clip, type Media, type Project } from './api'
+import { resolveStyle } from '../../remotion/style.js'
+import { api, ApiError, CABINET, downloadUrl, fontFaces, originalUrl, type Clip, type Face, type Media, type Project } from './api'
+import { StylePanel } from './StylePanel'
+import { captionText, removeCaption, removeHeading, setCaptionText, setHeadingText, setHookText, toggleAccent } from './text'
 import { fmt, lang, t } from './i18n'
 import { beginGesture, history, useEdit, usePlay } from './store'
 import { Timeline } from './Timeline'
@@ -23,12 +26,17 @@ export function Editor({ id }: { id: string }) {
   const [render, setRender] = useState<{ job: string; progress: number } | null>(null)
   const [locked, setLocked] = useState(false)
   const [pick, setPick] = useState<string | null>(null)
+  const [ownFont, setOwnFont] = useState(false)
+  const [faces, setFaces] = useState<Record<string, Face[]>>({})
+  const [tab, setTab] = useState<'sel' | 'style'>('style')
   const player = useRef<PlayerRef>(null)
 
   const clips = useEdit((s) => s.clips)
   const music = useEdit((s) => s.music)
   const title = useEdit((s) => s.title)
   const selected = useEdit((s) => s.selected)
+  const plan = useEdit((s) => s.plan)
+  const style = useEdit((s) => s.style)
   const set = useEdit((s) => s.set)
   const select = useEdit((s) => s.select)
   const now = usePlay((s) => s.t)
@@ -39,8 +47,8 @@ export function Editor({ id }: { id: string }) {
     let alive = true
     api.get(id).then((d) => {
       if (!alive) return
-      setProject(d.project); setMedia(d.media); setTier(d.tier); setSfx(d.sfx)
-      useEdit.setState({ clips: d.project.clips, music: d.project.music, title: d.project.title, selected: null })
+      setProject(d.project); setMedia(d.media); setTier(d.tier); setSfx(d.sfx); setOwnFont(!!d.ownFont)
+      useEdit.setState({ clips: d.project.clips, music: d.project.music, title: d.project.title, plan: d.project.plan, style: d.project.style || null, selected: null })
       history().clear()
       document.title = `${d.project.title} · tyne.pro`
     }).catch((e) => setError(e instanceof ApiError && e.status === 404 ? t('notFound') : t('noApp')))
@@ -52,19 +60,29 @@ export function Editor({ id }: { id: string }) {
   const lastSaved = useRef<string>('')
   useEffect(() => {
     if (!project) return
-    const body = JSON.stringify({ clips, music, title })
+    const body = JSON.stringify({ clips, music, title, plan: plan && { captions: plan.captions, headings: plan.headings, hook: plan.hook }, style })
     if (!lastSaved.current) { lastSaved.current = body; return }
     if (body === lastSaved.current) return
     setSave('busy')
     const timer = setTimeout(() => {
-      api.save(id, { clips, music, title }).then(() => { lastSaved.current = body; setSave('ok') }).catch(() => setSave('bad'))
+      api.save(id, JSON.parse(body)).then(() => { lastSaved.current = body; setSave('ok') }).catch(() => setSave('bad'))
     }, 600)
     return () => clearTimeout(timer)
-  }, [clips, music, title, project, id])
+  }, [clips, music, title, plan, style, project, id])
 
   const total = useMemo(() => totalDuration({ clips }), [clips])
-  const edit = useMemo(() => (project ? { ...project, clips, music, title } : null), [project, clips, music, title])
-  const props = useMemo(() => edit && projectToProps(edit, { url: (src: string) => media[src]?.preview || '', memes, sfx }), [edit, media, memes, sfx])
+  const edit = useMemo(() => (project && plan ? { ...project, clips, music, title, plan } : null), [project, clips, music, title, plan])
+  // Стиль за поточним тарифом; шрифти — з цього компʼютера (програма бере їх із Google Fonts один раз)
+  const resolved = useMemo(() => resolveStyle(style, tier), [style, tier])
+  useEffect(() => {
+    for (const fid of [resolved.hookFont, resolved.subFont]) {
+      if (fid && !faces[fid]) fontFaces(fid).then((f) => setFaces((m) => ({ ...m, [fid]: f }))).catch(() => {})
+    }
+  }, [resolved.hookFont, resolved.subFont, faces])
+  const props = useMemo(() => edit && projectToProps(edit, {
+    url: (src: string) => media[src]?.preview || '', memes, sfx, style: resolved,
+    fontFaces: { hook: resolved.hookFont ? faces[resolved.hookFont] || null : null, sub: resolved.subFont ? faces[resolved.subFont] || null : null },
+  }), [edit, media, memes, sfx, resolved, faces])
   const frames = Math.max(1, Math.round(total * FPS))
 
   // Плеєр ↔ шкала
@@ -86,6 +104,8 @@ export function Editor({ id }: { id: string }) {
   }, [total])
   const toggle = () => player.current?.toggle()
 
+  useEffect(() => { if (selected) setTab('sel') }, [selected])
+
   // Дії над кліпами
   const doSplit = useCallback(() => {
     const next = splitAt(useEdit.getState().clips, usePlay.getState().t)
@@ -94,12 +114,14 @@ export function Editor({ id }: { id: string }) {
   const doDelete = useCallback(() => {
     const s = useEdit.getState()
     if (s.selected === 'music') { set({ music: null }); select(null); return }
-    if (!s.selected) return
+    if (s.selected?.startsWith('cap:') && s.plan) { set({ plan: removeCaption(s.plan, Number(s.selected.slice(4))) }); select(null); return }
+    if (s.selected?.startsWith('hd:') && s.plan) { set({ plan: removeHeading(s.plan, Number(s.selected.slice(3))) }); select(null); return }
+    if (!s.selected || s.selected === 'hook') return
     set({ clips: removeClip(s.clips, s.selected) }); select(null)
   }, [set, select])
   const doDup = useCallback(() => {
     const s = useEdit.getState()
-    if (!s.selected || s.selected === 'music' || !project) return
+    if (!s.selected || s.selected === 'music' || s.selected.includes(':') || s.selected === 'hook' || !project) return
     const c = s.clips.find((x) => x.id === s.selected)
     if (c && totalDuration({ clips: s.clips }) + c.dur > project.maxSec) return toast(t('maxLen', { sec: project.maxSec }), { err: true })
     set({ clips: duplicateClip(s.clips, s.selected) })
@@ -238,7 +260,43 @@ export function Editor({ id }: { id: string }) {
         </section>
 
         <aside className="panel r insp">
-          {selected === 'music' && music ? (
+          <div className="tabs" role="tablist">
+            <button role="tab" aria-selected={tab === 'style'} className={`chip${tab === 'style' ? ' on' : ''}`} onClick={() => setTab('style')}>{t('tabStyle')}</button>
+            <button role="tab" aria-selected={tab === 'sel'} className={`chip${tab === 'sel' ? ' on' : ''}`} onClick={() => setTab('sel')}>{t('tabSel')}</button>
+          </div>
+          {tab === 'style' ? <StylePanel tier={tier} hasOwnFont={ownFont} /> : selected === 'hook' && plan ? (
+            <>
+              <h3>{t('hookT')}</h3>
+              <label htmlFor="hook">{t('text')}</label>
+              <input id="hook" className="field" defaultValue={(plan.hook.words || plan.hook.chunks.flat()).join(' ')} key={`hook-${plan.hook.chunks.length}`}
+                onBlur={(e) => set({ plan: setHookText(plan, e.target.value) })} onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }} />
+            </>
+          ) : selected?.startsWith('hd:') && plan?.headings[Number(selected.slice(3))] ? (() => {
+            const i = Number(selected.slice(3)); const h = plan.headings[i]
+            return (
+              <>
+                <h3>{t('heading')}</h3>
+                <label htmlFor="hd">{t('text')}</label>
+                <input id="hd" className="field" value={h.text} onChange={(e) => set({ plan: setHeadingText(plan, i, e.target.value) })} />
+                <button className="btn danger" style={{ width: '100%' }} onClick={doDelete}>🗑 {t('delCaption')} <span className="kbd">⌫</span></button>
+              </>
+            )
+          })() : selected?.startsWith('cap:') && plan?.captions[Number(selected.slice(4))] ? (() => {
+            const i = Number(selected.slice(4)); const c = plan.captions[i]
+            return (
+              <>
+                <h3>{t('caption')}</h3>
+                <label htmlFor="cap">{t('text')}</label>
+                <textarea id="cap" className="field" rows={3} key={`cap-${i}-${c.words.length}`} defaultValue={captionText(c)}
+                  onBlur={(e) => set({ plan: setCaptionText(plan, i, e.target.value) })} />
+                <div className="words">
+                  {c.words.map((w, wi) => <button key={wi} className={`chip${w.accent ? ' on' : ''}`} onClick={() => set({ plan: toggleAccent(plan, i, wi) })}>{w.text}</button>)}
+                </div>
+                <p className="hint" style={{ margin: '8px 0 12px' }}>{t('captionHint')}</p>
+                <button className="btn danger" style={{ width: '100%' }} onClick={doDelete}>🗑 {t('delCaption')} <span className="kbd">⌫</span></button>
+              </>
+            )
+          })() : selected === 'music' && music ? (
             <>
               <h3>{t('music')}</h3>
               <label htmlFor="vol">{t('volume')} · {Math.round(music.volume * 100)}%</label>

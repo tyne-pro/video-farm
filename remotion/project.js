@@ -54,7 +54,7 @@ function mapSpan(placed, start, dur) {
 /** Субтитры: каждое слово — за своим клипом; блок, разрезанный монтажом, делится на части */
 function mapCaptions(placed, captions) {
   const out = []
-  for (const block of captions || []) {
+  for (const [bi, block] of (captions || []).entries()) {
     let group = null
     for (const w of block.words) {
       const m = mapTime(placed, w.start)
@@ -63,6 +63,7 @@ function mapCaptions(placed, captions) {
         group = { clip: m.clip, words: [], first: w }
         out.push(group)
         group.block = block
+        group.bi = bi
       }
       const end = Math.min(m.clip.start + m.clip.dur, m.at + (w.end - w.start))
       group.words.push({ ...w, start: round(m.at), end: round(end) })
@@ -76,7 +77,7 @@ function mapCaptions(placed, captions) {
     const tail = Math.max(0, g.block.end - g.block.words[g.block.words.length - 1].end)
     const start = round(g.words[0].start - lead)
     const end = round(Math.min(c.start + c.dur, last.end + tail))
-    return { ...g.block, start, end, words: g.words }
+    return { ...g.block, start, end, words: g.words, _i: g.bi, _whole: g.words.length === g.block.words.length }
   }).sort((a, b) => a.start - b.start)
 }
 
@@ -85,7 +86,8 @@ export function mapPlan(project) {
   const placed = layout(project.clips)
   const total = totalDuration(project)
   const plan = project.plan
-  const span = (list) => (list || []).map((x) => { const m = mapSpan(placed, x.start, x.dur); return m ? { ...x, ...m } : null }).filter(Boolean)
+  // _i — номер в исходном плане: по нему редактор правит текст и время
+  const span = (list) => (list || []).map((x, i) => { const m = mapSpan(placed, x.start, x.dur); return m ? { ...x, ...m, _i: i } : null }).filter(Boolean)
   const hookEnd = Math.min(plan.hook?.end ?? 0, total)
   return {
     ...plan,
@@ -107,7 +109,7 @@ export function mapPlan(project) {
  * Свойства композиции Farm. url(src, project) — адрес файла проекта: в редакторе лёгкая копия 540p,
  * при финальной сборке — полный файл.
  */
-export function projectToProps(project, { url, memes = {}, sfx = {}, musicFallback = null, rollerSrc = null, fontSrc = null, captionColor } = {}) {
+export function projectToProps(project, { url, memes = {}, sfx = {}, musicFallback = null, rollerSrc = null, fontSrc = null, captionColor, style = null, fontFaces = null } = {}) {
   const placed = layout(project.clips)
   const durationSec = Math.max(0.5, totalDuration(project))
   // Музыка «до конца ролика» растягивается сама, пока её конец не подрезали вручную
@@ -127,6 +129,8 @@ export function projectToProps(project, { url, memes = {}, sfx = {}, musicFallba
     rollerSrc,
     fontSrc,
     watermark: !!project.limits?.watermark,
+    style,
+    fontFaces,
   }
 }
 

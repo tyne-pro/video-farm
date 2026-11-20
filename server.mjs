@@ -12,6 +12,8 @@ import crypto from 'node:crypto'
 import { spawn } from 'node:child_process'
 import { runPipeline, renderProject, ROOT, DATA, Cancelled } from './lib/pipeline.mjs'
 import { totalDuration } from './remotion/project.js'
+import { FONT } from './remotion/style.js'
+import { fontFaces } from './lib/gfonts.mjs'
 import { loadProject, listProjects, trashItem, restoreItem, purgeTrash, reveal, applyEditorChanges, ensureProxies, mediaInfo, projectDir, projectPaths } from './lib/projects.mjs'
 import { applyEdits } from './lib/plan.mjs'
 import { loadMemes } from './lib/memes.mjs'
@@ -228,7 +230,8 @@ async function projectsApi(req, res, url, parts) {
   if (req.method === 'GET' && parts.length === 3) {
     await ensureProxies(DATA, project).catch((e) => console.error(e))
     const me = await currentMe()
-    return json(res, 200, { project, media: mediaInfo(DATA, project, assetUrl), tier: me?.tier || null, sfx: Object.fromEntries(['click', 'type', 'pop', 'whoosh'].map((k) => [k, assetUrl(path.join(DATA, '.cache', 'sfx', `${k}.wav`))])) })
+    const ownFont = fs.existsSync(path.join(DATA, 'fonts')) && fs.readdirSync(path.join(DATA, 'fonts')).some((n) => /\.(ttf|otf|woff2?)$/i.test(n))
+    return json(res, 200, { project, ownFont, media: mediaInfo(DATA, project, assetUrl), tier: me?.tier || null, sfx: Object.fromEntries(['click', 'type', 'pop', 'whoosh'].map((k) => [k, assetUrl(path.join(DATA, '.cache', 'sfx', `${k}.wav`))])) })
   }
   // Автосохранение монтажа
   if (req.method === 'PUT' && parts.length === 3) {
@@ -263,6 +266,7 @@ async function projectsApi(req, res, url, parts) {
     job.dir = dir
     job.projectId = project.id
     job.options = { lang: project.lang, title: project.title, k: savedKey(), mode: project.mode }
+    job.tier = me.tier
     job.say('rerender')
     queueProjectRender(job, project, body.draft === true)
     return json(res, 200, publicJob(job))
@@ -312,6 +316,12 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (parts[0] === 'api' && parts[1] === 'projects') return projectsApi(req, res, url, parts)
+
+    // Шрифт стиля для превью: файлы скачиваются с Google Fonts один раз и дальше лежат на компьютере
+    if (req.method === 'GET' && parts[0] === 'api' && parts[1] === 'fonts' && FONT[parts[2]]) {
+      const faces = await fontFaces(path.join(DATA, '.cache'), parts[2]).catch(() => [])
+      return json(res, faces.length ? 200 : 502, faces.map((f) => ({ src: assetUrl(f.file), weight: f.weight, style: f.style, unicodeRange: f.unicodeRange })))
+    }
 
     if (parts[0] !== 'api' || parts[1] !== 'jobs') return json(res, 404, { error: 'not found' })
 

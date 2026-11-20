@@ -10,8 +10,9 @@
 import React, { useEffect, useState } from 'react'
 import {
   AbsoluteFill, Audio, Easing, Img, OffthreadVideo, Sequence,
-  continueRender, delayRender, interpolate, useCurrentFrame, useVideoConfig,
+  continueRender, delayRender, getRemotionEnvironment, interpolate, useCurrentFrame, useVideoConfig,
 } from 'remotion'
+import { isLight } from './style.js'
 import { GeneratedBackground, Grain, Vignette, paletteFor } from './Backgrounds.jsx'
 import { loadFont as loadMontserrat } from '@remotion/google-fonts/Montserrat'
 import { loadFont as loadUnbounded } from '@remotion/google-fonts/Unbounded'
@@ -136,9 +137,43 @@ function useCustomFont(src) {
   return family
 }
 
+/** Шрифт стиля из файлов на компьютере (скачаны с Google Fonts): регистрируем начертания по подмножествам */
+const loadedFaces = new Set()
+function useFaces(id, faces) {
+  const family = id && faces?.length ? `FarmF_${id}` : null
+  const [handle] = useState(() => (family && !loadedFaces.has(family) && getRemotionEnvironment().isRendering ? delayRender(`font ${id}`) : null))
+  useEffect(() => {
+    if (!family || loadedFaces.has(family)) { if (handle) continueRender(handle); return }
+    loadedFaces.add(family)
+    Promise.all(faces.map((f) => new FontFace(family, `url(${f.src})`, { weight: String(f.weight), style: f.style, unicodeRange: f.unicodeRange }).load().then((ff) => document.fonts.add(ff))))
+      .catch(() => {}).finally(() => { if (handle) continueRender(handle) })
+  }, [family])
+  return family
+}
+
+/** Подложка текста: тень, плашка, обводка или без */
+function backingStyle(st, color) {
+  const light = isLight(color)
+  if (!st || st.backing === 'shadow') return light ? { textShadow: '0 3px 18px rgba(0,0,0,0.55)' } : {}
+  if (st.backing === 'outline') return { WebkitTextStroke: `0.12em ${light ? '#000' : '#fff'}`, paintOrder: 'stroke fill' }
+  if (st.backing === 'plate') return { background: light ? 'rgba(0,0,0,0.72)' : '#FFFFFF', padding: '0.06em 0.3em', borderRadius: '0.22em', boxDecorationBreak: 'clone', WebkitBoxDecorationBreak: 'clone' }
+  return {}
+}
+
+/** Акцентное слово: цветом, маркером, свечением или крупнее */
+function accentStyle(st, color) {
+  if (!st) return { color: color === WHITE ? BUTTER : '#8A5A00', fontWeight: 800 }
+  // Светлый акцент на тёмном тексте без плашки не читается — берём тёмное золото
+  const a = st.accentMode !== 'marker' && !isLight(color) && isLight(st.accent) && st.backing !== 'plate' ? '#8A5A00' : st.accent
+  if (st.accentMode === 'marker') return { background: a, color: isLight(a) ? '#111111' : '#FFFFFF', padding: '0 0.14em', borderRadius: '0.16em', boxDecorationBreak: 'clone', WebkitBoxDecorationBreak: 'clone' }
+  if (st.accentMode === 'glow') return { color: a, textShadow: `0 0 0.35em ${a}, 0 0 0.12em ${a}` }
+  if (st.accentMode === 'bigger') return { color: a, fontSize: '1.18em', fontWeight: 800 }
+  return { color: a, fontWeight: 800 }
+}
+
 // --- Хук ---------------------------------------------------------------------------
 
-const Hook = ({ hook, box, color, font }) => {
+const Hook = ({ hook, box, color, font, st }) => {
   const frame = useCurrentFrame()
   if (frame > f(hook.end)) return null
   const fadeOut = interpolate(frame, [f(hook.end) - 6, f(hook.end)], [1, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
@@ -152,8 +187,9 @@ const Hook = ({ hook, box, color, font }) => {
         const at = f(0.05 + i * hook.chunkDur)
         if (frame < at) return null
         const k = interpolate(frame - at, [0, 3, 6], [0.4, 1.12, 1], { extrapolateRight: 'clamp' })
-        // Каждый второй кусок — курсивом-серифом, как микс шрифтов в референсах
-        const italic = i % 3 === 1
+        // Классика: каждый третий кусок — курсивом-серифом, как микс шрифтов в референсах; со своим шрифтом — один шрифт
+        const italic = !(st && st.hookFont) && i % 3 === 1
+        const last = i === hook.chunks.length - 1
         return (
           <div key={i} style={{
             fontFamily: italic ? playfair : (font || unbounded),
@@ -161,13 +197,15 @@ const Hook = ({ hook, box, color, font }) => {
             fontWeight: 700,
             fontSize: fitSize(italic ? box.size * 0.9 : box.size, box.width, chunk.join(' ').split(' '), italic ? 0.55 : 0.72),
             lineHeight: 1.02,
-            color: i === hook.chunks.length - 1 ? (color === WHITE ? BUTTER : '#7A4E00') : color,
+            color: last ? (st ? (st.accentMode === 'marker' ? color : st.accent) : (color === WHITE ? BUTTER : '#7A4E00')) : color,
             textAlign: 'center',
             transform: `scale(${k})`,
             letterSpacing: italic ? 0 : -1,
-            textShadow: color === WHITE ? '0 3px 18px rgba(0,0,0,0.5)' : 'none',
+            ...(st ? {} : { textShadow: color === WHITE ? '0 3px 18px rgba(0,0,0,0.5)' : 'none' }),
           }}>
-            {italic ? chunk.join(' ').toLowerCase() : chunk.join(' ')}
+            <span style={st ? { ...backingStyle(st, color), ...(last && st.accentMode !== 'color' && st.accentMode !== 'bigger' ? accentStyle(st, color) : {}) } : undefined}>
+              {italic ? chunk.join(' ').toLowerCase() : chunk.join(' ')}
+            </span>
           </div>
         )
       })}
@@ -177,7 +215,7 @@ const Hook = ({ hook, box, color, font }) => {
 
 // --- Субтитры -------------------------------------------------------------------
 
-const Captions = ({ captions, box, color, hookEnd, font }) => {
+const Captions = ({ captions, box, color, hookEnd, font, st }) => {
   const frame = useCurrentFrame()
   const t = frame / FPS
   if (t < hookEnd) return null
@@ -201,23 +239,23 @@ const Captions = ({ captions, box, color, hookEnd, font }) => {
         fontWeight: line ? 700 : 600,
         fontSize: line ? fitSize(box.lineSize, box.width, block.words.map((w) => w.text), 0.72) : fitSize(box.size, box.blockWidth, block.words.map((w) => w.text), 0.58),
         overflowWrap: 'anywhere',
-        lineHeight: 1.15,
+        lineHeight: st?.backing === 'plate' ? 1.42 : 1.15,
         color,
         textTransform: line ? 'uppercase' : 'none',
-        textShadow: color === WHITE ? '0 2px 14px rgba(0,0,0,0.55)' : 'none',
+        ...(st ? {} : { textShadow: color === WHITE ? '0 2px 14px rgba(0,0,0,0.55)' : 'none' }),
       }}>
-        {block.words.map((w, i) => {
-          const shown = t >= w.start - 0.05
-          return (
-            <span key={i} style={{
-              opacity: shown ? 1 : 0,
-              color: w.accent ? (color === WHITE ? BUTTER : '#8A5A00') : color,
-              fontWeight: w.accent ? 800 : undefined,
-            }}>
-              {w.text}{i < block.words.length - 1 ? ' ' : ''}
-            </span>
-          )
-        })}
+        <span style={st ? backingStyle(st, color) : undefined}>
+          {/* С плашкой слова появляются по одному без пустого места под будущие слова */}
+          {block.words.filter((w) => st?.backing !== 'plate' || t >= w.start - 0.05).map((w, i, list) => {
+            const shown = t >= w.start - 0.05
+            return (
+              <React.Fragment key={i}>
+                <span style={{ opacity: shown ? 1 : 0, ...(w.accent ? accentStyle(st, color) : {}) }}>{w.text}</span>
+                {i < list.length - 1 ? ' ' : ''}
+              </React.Fragment>
+            )
+          })}
+        </span>
       </div>
     </div>
   )
@@ -225,7 +263,7 @@ const Captions = ({ captions, box, color, hookEnd, font }) => {
 
 // --- Заголовки тем ------------------------------------------------------------
 
-const Heading = ({ text, box, color, font }) => {
+const Heading = ({ text, box, color, font, st }) => {
   const frame = useCurrentFrame()
   const y = interpolate(frame, [0, 5], [30, 0], { extrapolateRight: 'clamp', easing: Easing.out(Easing.cubic) })
   const o = interpolate(frame, [0, 3, f(1.8) - 5, f(1.8)], [0, 1, 1, 0], { extrapolateRight: 'clamp' })
@@ -235,7 +273,7 @@ const Heading = ({ text, box, color, font }) => {
       textAlign: 'center', fontFamily: font || unbounded, fontWeight: 700, fontSize: box.size,
       lineHeight: 1.05, color, opacity: o, transform: `translateY(${y}px)`, textTransform: 'uppercase',
     }}>
-      {text}
+      <span style={st ? backingStyle(st, color) : undefined}>{text}</span>
     </div>
   )
 }
@@ -292,12 +330,18 @@ export const Farm = (props) => {
   const { mode = 'cut', plan, videoSrc, voiceSrc, landscape, screens = [], musicSrc, musicVolume = 0.05, sfx, memes, captionColor = WHITE, emoji = '', rollerSrc, fontSrc, watermark } = props
   const frame = useCurrentFrame()
   const { width } = useVideoConfig()
-  const font = useCustomFont(fontSrc)
+  const own = useCustomFont(fontSrc)
+  // Стиль ролика (из проекта): шрифты Google с этого компьютера, цвета, акценты, подложка
+  // Классика без своих настроек — ровно исходный вид фермы
+  const ps = props.style
+  const st = ps && !(ps.preset === 'classic' && !ps.hookFont && !ps.subFont && !ps.text && ps.accent === BUTTER && ps.accentMode === 'color' && ps.backing === 'shadow') ? ps : null
+  const hookFam = useFaces(st?.hookFont, props.fontFaces?.hook)
+  const subFam = useFaces(st?.subFont, props.fontFaces?.sub)
   if (!plan) return <AbsoluteFill style={{ backgroundColor: '#000' }} />
   const slides = mode !== 'cut'
   const box = slides ? LS : L
   const zoom = slides ? 1 : zoomAt(frame, plan.zooms || [])
-  const textColor = slides || landscape ? WHITE : captionColor
+  const textColor = st?.text || (slides || landscape ? WHITE : captionColor)
   const palette = paletteFor(plan.palette, plan.title)
 
   // Проект из редактора: основная дорожка клипами (разрезы, перестановки, замены) и голос за ними
@@ -332,11 +376,11 @@ export const Farm = (props) => {
       {slides && <Vignette strength={0.45} />}
       {slides && <Grain />}
 
-      <Captions captions={plan.captions} box={box.captions} color={textColor} hookEnd={plan.hook.end} font={font} />
+      <Captions captions={plan.captions} box={box.captions} color={textColor} hookEnd={plan.hook.end} font={own || subFam} st={st} />
 
       {plan.headings.map((h, i) => (
         <Sequence key={`h${i}`} from={f(h.start)} durationInFrames={f(h.dur)} layout="none">
-          <Heading text={h.text} box={box.heading} color={WHITE} font={font} />
+          <Heading text={h.text} box={box.heading} color={st?.text || WHITE} font={own || hookFam} st={st} />
         </Sequence>
       ))}
 
@@ -350,7 +394,7 @@ export const Farm = (props) => {
         )
       })}
 
-      <Hook hook={plan.hook} box={box.hook} color={textColor} font={font} />
+      <Hook hook={plan.hook} box={box.hook} color={textColor} font={own || hookFam} st={st} />
 
       {(emoji || rollerSrc) && <Roller emoji={emoji} rollerSrc={rollerSrc} box={box.roller} width={width} />}
       {watermark && <Watermark />}

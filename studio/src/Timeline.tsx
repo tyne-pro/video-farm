@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent } from 'react'
 import { layout, mapPlan, moveClip, trimClip, MIN_CLIP } from '../../remotion/project.js'
-import type { Clip, Media, Music, Project } from './api'
+import type { Clip, Media, Music, Plan, Project } from './api'
+import { setCaptionEdge, shiftCaption, shiftHeading } from './text'
 import { fmt, t } from './i18n'
 import { beginGesture, useEdit, usePlay } from './store'
 
@@ -13,6 +14,7 @@ type Drag =
   | { kind: 'trim'; id: string; edge: 'in' | 'out'; x0: number; clips: Clip[]; end: () => void }
   | { kind: 'move'; id: string; x0: number; dx: number; moved: boolean; to: number }
   | { kind: 'music'; mode: 'move' | 'in' | 'out'; x0: number; music: Music; end: () => void }
+  | { kind: 'text'; what: 'cap' | 'hd'; i: number; mode: 'move' | 'in' | 'out'; x0: number; plan: Plan; end: () => void; moved: boolean }
   | { kind: 'scrub' }
 
 function usePeaks(url: string | null | undefined) {
@@ -50,6 +52,7 @@ export function Timeline({ project, media, total, seek, split, dup, del, onDropF
 }) {
   const clips = useEdit((s) => s.clips)
   const music = useEdit((s) => s.music)
+  const plan = useEdit((s) => s.plan) || project.plan
   const selected = useEdit((s) => s.selected)
   const set = useEdit((s) => s.set)
   const select = useEdit((s) => s.select)
@@ -75,7 +78,7 @@ export function Timeline({ project, media, total, seek, split, dup, del, onDropF
   const k = pps ?? fit
   const width = Math.max(view, (total + 2) * k)
   const placed = useMemo(() => layout(clips), [clips])
-  const mapped = useMemo(() => mapPlan({ ...project, clips }), [project, clips])
+  const mapped = useMemo(() => mapPlan({ ...project, clips, plan }), [project, clips, plan])
   const voicePeaks = usePeaks(project.voice ? media[project.voice]?.peaks : null)
   const musicPeaks = usePeaks(music ? media[music.src]?.peaks : null)
 
@@ -141,6 +144,13 @@ export function Timeline({ project, media, total, seek, split, dup, del, onDropF
     if (edge) setDrag({ kind: 'trim', id: c.id, edge, x0: e.clientX, clips, end: beginGesture() })
     else setDrag({ kind: 'move', id: c.id, x0: e.clientX, dx: 0, moved: false, to: clips.findIndex((x) => x.id === c.id) })
   }
+  const onTextDown = (e: RPointerEvent, what: 'cap' | 'hd', i: number, mode: 'move' | 'in' | 'out') => {
+    if (e.button !== 0) return
+    e.stopPropagation()
+    ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+    select(`${what}:${i}`)
+    setDrag({ kind: 'text', what, i, mode, x0: e.clientX, plan, end: beginGesture(), moved: false })
+  }
   const onMusicDown = (e: RPointerEvent, mode: 'move' | 'in' | 'out') => {
     if (e.button !== 0 || !music) return
     e.stopPropagation()
@@ -182,6 +192,14 @@ export function Timeline({ project, media, total, seek, split, dup, del, onDropF
       setDrag({ ...drag, dx, moved: true, to })
       return
     }
+    if (drag.kind === 'text') {
+      const d = (e.clientX - drag.x0) / k
+      if (!drag.moved && Math.abs(e.clientX - drag.x0) < 3) return
+      if (!drag.moved) setDrag({ ...drag, moved: true })
+      if (drag.what === 'hd') set({ plan: shiftHeading(drag.plan, drag.i, d) })
+      else set({ plan: drag.mode === 'move' ? shiftCaption(drag.plan, drag.i, d) : setCaptionEdge(drag.plan, drag.i, drag.mode, d) })
+      return
+    }
     if (drag.kind === 'music') {
       const m0 = drag.music
       let d = (e.clientX - drag.x0) / k
@@ -204,7 +222,11 @@ export function Timeline({ project, media, total, seek, split, dup, del, onDropF
   }
   const onUp = () => {
     if (!drag) return
-    if (drag.kind === 'trim' || drag.kind === 'music') drag.end()
+    if (drag.kind === 'trim' || drag.kind === 'music' || drag.kind === 'text') drag.end()
+    if (drag.kind === 'text' && !drag.moved) {
+      const c = drag.what === 'cap' ? mapped.captions.find((x) => x._i === drag.i) : mapped.headings.find((x) => x._i === drag.i)
+      if (c) seek(c.start + 0.05)
+    }
     if (drag.kind === 'move') {
       if (drag.moved) {
         const from = clips.findIndex((x) => x.id === drag.id)
@@ -238,8 +260,8 @@ export function Timeline({ project, media, total, seek, split, dup, del, onDropF
     <section className="tl" aria-label="Таймлайн">
       <div className="tbar">
         <button className="btn" onClick={split} title="S">✂ {t('split')}</button>
-        <button className="btn" onClick={dup} disabled={!selected || selected === 'music'} title="⌘D">⧉ {t('dup')}</button>
-        <button className="btn danger" onClick={del} disabled={!selected} title="⌫">🗑 {t('del')}</button>
+        <button className="btn" onClick={dup} disabled={!selected || selected === 'music' || selected === 'hook' || selected.includes(':')} title="⌘D">⧉ {t('dup')}</button>
+        <button className="btn danger" onClick={del} disabled={!selected || selected === 'hook'} title="⌫">🗑 {t('del')}</button>
         <button className={`btn${magnet ? ' on' : ''}`} onClick={() => setMagnet(!magnet)} aria-pressed={magnet}>🧲 {t('magnet')}</button>
         <span className="spacer muted" style={{ fontSize: 12 }}>{t('zoom')}</span>
         <button className="btn ic" onClick={() => setPps(Math.max(4, k / 1.5))} aria-label="−">−</button>
@@ -250,7 +272,7 @@ export function Timeline({ project, media, total, seek, split, dup, del, onDropF
         <div className="labels">
           <div className="lbl" style={{ height: ROWS.ruler }} />
           <div className="lbl" style={{ height: ROWS.video }}>🎞 {t('video')}</div>
-          <div className="lbl" style={{ height: ROWS.text }}>Т {t('text')}</div>
+          <div className="lbl" style={{ height: ROWS.text + 8 }}>Т {t('text')}</div>
           <div className="lbl" style={{ height: ROWS.stickers }}>☺ {t('stickers')}</div>
           {project.voice && <div className="lbl" style={{ height: ROWS.voice }}>🎙 {t('voice')}</div>}
           {hasMusic && <div className="lbl" style={{ height: ROWS.music }}>♪ {t('music')}</div>}
@@ -303,13 +325,19 @@ export function Timeline({ project, media, total, seek, split, dup, del, onDropF
             </div>
 
             {/* Тексти й стікери їдуть за монтажем */}
-            <div className="lane" style={{ height: ROWS.text }} onPointerDown={onScrubDown}>
-              {mapped.hook?.end > 0 && <div className="clip hd" style={{ left: 0, width: mapped.hook.end * k, top: 4, bottom: 4 }}>{(mapped.hook.words || mapped.hook.chunks.flat()).join(' ')}</div>}
-              {mapped.captions.map((b: { start: number; end: number; words: { text: string }[] }, i: number) => (
-                <div key={`c${i}`} className="clip tx" style={{ left: b.start * k, width: Math.max(4, (b.end - b.start) * k - 2), top: 4, bottom: 4 }} title={b.words.map((w) => w.text).join(' ')}>{b.words.map((w) => w.text).join(' ')}</div>
+            <div className="lane" style={{ height: ROWS.text + 8 }} onPointerDown={onScrubDown}>
+              {mapped.hook?.end > 0 && <div className={`clip hd tsel${selected === 'hook' ? ' selc' : ''}`} style={{ left: 0, width: mapped.hook.end * k, top: 4, bottom: 4 }}
+                onPointerDown={(e) => { e.stopPropagation(); select('hook'); seek(0) }}>{(mapped.hook.words || mapped.hook.chunks.flat()).join(' ')}</div>}
+              {mapped.captions.map((b, i) => (
+                <div key={`c${i}`} className={`clip tx tsel${selected === `cap:${b._i}` ? ' selc' : ''}`} style={{ left: b.start * k, width: Math.max(4, (b.end - b.start) * k - 2), top: 4, bottom: 4 }}
+                  title={b.words.map((w) => w.text).join(' ')} onPointerDown={(e) => onTextDown(e, 'cap', b._i!, 'move')}>
+                  {b.words.map((w) => w.text).join(' ')}
+                  {b._whole && <><span className="h l" onPointerDown={(e) => onTextDown(e, 'cap', b._i!, 'in')} /><span className="h r" onPointerDown={(e) => onTextDown(e, 'cap', b._i!, 'out')} /></>}
+                </div>
               ))}
-              {mapped.headings.map((h: { start: number; dur: number; text: string }, i: number) => (
-                <div key={`h${i}`} className="clip hd" style={{ left: h.start * k, width: Math.max(4, h.dur * k), top: 4, bottom: 4 }}>{h.text}</div>
+              {mapped.headings.map((h, i) => (
+                <div key={`h${i}`} className={`clip hd tsel${selected === `hd:${h._i}` ? ' selc' : ''}`} style={{ left: h.start * k, width: Math.max(4, h.dur * k), top: 4, bottom: 4 }}
+                  onPointerDown={(e) => onTextDown(e, 'hd', h._i!, 'move')}>{h.text}</div>
               ))}
             </div>
             <div className="lane" style={{ height: ROWS.stickers }} onPointerDown={onScrubDown}>
