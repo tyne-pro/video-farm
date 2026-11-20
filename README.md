@@ -1,38 +1,54 @@
 # Video farm · tyne.pro
 
-**UA.** Генератор коротких роликів для інструмента «Ферма роликів» у кабінеті [tyne.pro](https://tyne.pro). Працює тільки разом із кабінетом: команду встановлення видає сторінка інструмента. Код відкритий, щоб кожен міг прочитати його до встановлення.
+**UA.** Програма для інструмента «Ферма роликів» у кабінеті [tyne.pro](https://tyne.pro): монтує короткі ролики для TikTok, Reels і Shorts на вашому комп’ютері. Працює разом із кабінетом. Код відкритий, щоб кожен міг прочитати його до встановлення.
 
 - Монтаж іде на вашому комп’ютері. Відео нікуди не завантажуються.
-- Генератор слухає лише цей комп’ютер (127.0.0.1:4747).
-- Ставить офіційні пакети: Node.js, ffmpeg, Git, Remotion, whisper.cpp, Claude Code.
-- Версія генератора **c77d600fdaa0**. Результат перевірки VirusTotal показано на сторінці інструмента в кабінеті.
+- Програма слухає лише цей комп’ютер (127.0.0.1:4747).
+- Усередині вже є Node.js, ffmpeg і генератор. Перелік бібліотек і їхні ліцензії — у NOTICE.txt усередині програми.
+- Версія генератора **ce88b3965b05**. Результат перевірки VirusTotal показано на сторінці інструмента.
 
-### Додаток для Mac
+### Mac (Apple Silicon)
 
-Встановлення на Mac (Apple Silicon) однією командою в «Терміналі»:
+Однією командою в «Терміналі»:
 
 ```
 curl -fsSL https://raw.githubusercontent.com/tyne-pro/video-farm/main/install.sh | bash
 ```
 
-У папці `app` — додаток на Rust (Tauri). Усередині вже є Node.js, ffmpeg і генератор, тож нічого не треба вводити в терміналі. Установники збирає GitHub Actions цього репозиторію й публікує в розділі Releases.
+### Windows 10 і 11 (x64)
 
-![Вікно додатка](docs/app.png)
+Однією командою в PowerShell:
+
+```
+irm https://raw.githubusercontent.com/tyne-pro/video-farm/main/install.ps1 | iex
+```
+
+Або завантажте `*-setup.exe` з розділу Releases. Установник без цифрового підпису, тому Windows може показати вікно SmartScreen: натисніть «Докладніше», потім «Однаково запустити».
+
+У папці `app` — сама програма (Tauri). Установники для Mac і Windows збирає GitHub Actions цього репозиторію: збирає, ставить на чистий Windows, запускає й робить пробний ролик, потім публікує в Releases.
+
+![Вікно програми](docs/app.png)
 ![Ферма в кабінеті](docs/cabinet.png)
 
-**EN.** The clip generator behind the "Video farm" tool in the [tyne.pro](https://tyne.pro) cabinet. It works only together with the cabinet: the tool page gives the install command. The source is open so anyone can read it before installing.
+**EN.** The app behind the "Video farm" tool in the [tyne.pro](https://tyne.pro) cabinet: it edits short clips for TikTok, Reels and Shorts on your computer. It works together with the cabinet. The source is open so anyone can read it before installing.
 
 - Editing runs on your computer. Videos are not uploaded anywhere.
-- The generator listens only on this computer (127.0.0.1:4747).
-- Installs official packages: Node.js, ffmpeg, Git, Remotion, whisper.cpp, Claude Code.
-- Generator version **c77d600fdaa0**. The VirusTotal result is shown on the tool page in the cabinet.
+- The app listens only on this computer (127.0.0.1:4747).
+- It already carries Node.js, ffmpeg and the generator. The libraries and their licences are listed in NOTICE.txt inside the app.
+- Generator version **ce88b3965b05**. The VirusTotal result is shown on the tool page.
 
-### Mac app
-
-Install on a Mac (Apple Silicon) with one Terminal command:
+### Mac (Apple Silicon)
 
 ```
 curl -fsSL https://raw.githubusercontent.com/tyne-pro/video-farm/main/install.sh | bash
 ```
 
-The `app` folder holds a Rust (Tauri) app. It already carries Node.js, ffmpeg and the generator, so nothing has to be typed in a terminal. This repository's GitHub Actions build the installers and publish them under Releases.
+### Windows 10 and 11 (x64)
+
+```
+irm https://raw.githubusercontent.com/tyne-pro/video-farm/main/install.ps1 | iex
+```
+
+Or download `*-setup.exe` from Releases. The installer is not signed, so Windows may show SmartScreen: press "More info", then "Run anyway".
+
+The `app` folder holds the app itself (Tauri). This repository's GitHub Actions build the Mac and Windows installers, install the Windows one on a clean machine, start it and make a test clip, then publish them under Releases.

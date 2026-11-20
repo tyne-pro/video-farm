@@ -1,6 +1,6 @@
 [package]
 name = "tyne-farm"
-version = "1.4.2"
+version = "1.5.0"
 description = "Ферма роликів tyne.pro"
 authors = ["tyne.pro"]
 edition = "2021"
@@ -9,10 +9,14 @@ edition = "2021"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
 tauri-plugin-opener = "2"
 tauri-plugin-deep-link = "2"
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
+tauri-plugin-notification = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-autostart = "2"
+sys-locale = "0.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 

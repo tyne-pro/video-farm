@@ -14,7 +14,8 @@ import { runPipeline, renderProject, ROOT, DATA, Cancelled } from './lib/pipelin
 import { totalDuration } from './remotion/project.js'
 import { FONT } from './remotion/style.js'
 import { fontFaces } from './lib/gfonts.mjs'
-import { loadProject, listProjects, trashItem, restoreItem, purgeTrash, reveal, applyEditorChanges, ensureProxies, mediaInfo, projectDir, projectPaths } from './lib/projects.mjs'
+import { readSettings, writeSettings, outDir, addEvent, listEvents, diskUsage, clearCache, supportReport, techLog, systemChecks, humanSize, freeSpace, NEED_BYTES } from './lib/desk.mjs'
+import { loadProject, findOutput, listProjects, trashItem, restoreItem, purgeTrash, reveal, applyEditorChanges, ensureProxies, mediaInfo, projectDir, projectPaths } from './lib/projects.mjs'
 import { applyEdits } from './lib/plan.mjs'
 import { loadMemes } from './lib/memes.mjs'
 import { PORTAL, savedKey, portalMe, portalRefund } from './lib/portal.mjs'
@@ -45,20 +46,32 @@ purgeTrash(DATA)
 setInterval(() => { cleanWork(); purgeTrash(DATA) }, 60 * 60 * 1000).unref()
 const STUDIO = path.join(ROOT, 'studio', 'dist')
 
-const ALLOWED_ORIGINS = new Set([PORTAL, 'https://cp.tyne.pro', 'http://localhost:3000', 'http://localhost:3313', `http://${HOST}:${PORT}`, `http://localhost:${PORT}`])
+// Окно программы (tauri://localhost) тоже ходит сюда за очередью, событиями и местом на диске
+const ALLOWED_ORIGINS = new Set([PORTAL, 'https://cp.tyne.pro', 'http://localhost:3000', 'http://localhost:3313', `http://${HOST}:${PORT}`, `http://localhost:${PORT}`, 'tauri://localhost', 'http://tauri.localhost'])
+const originOk = (o) => ALLOWED_ORIGINS.has(o) || (!!process.env.FARM_TEST && /^http:\/\/127\.0\.0\.1:\d+$/.test(o))
 
 // --- Задачи ------------------------------------------------------------------
 
 const jobs = new Map()
 const queue = []
 let running = false
+// Пауза очереди: текущий ролик доделывается, следующие ждут
+let paused = !!readSettings(DATA).paused
 const appLog = []
 let meCache = null
 const stampNow = () => new Date().toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' })
 const note = (line) => { line = `${stampNow()} ${line}`; appLog.push(line); if (appLog.length > 200) appLog.shift(); console.log(line) }
 
+/** Сколько осталось: по скорости с начала работы (после 5 % — раньше оценка случайная) */
+function etaOf(j) {
+  if (j.state !== 'running' || !j.startedAt || j.progress < 0.05) return null
+  const spent = (Date.now() - j.startedAt) / 1000
+  return Math.max(1, Math.round(spent * (1 - j.progress) / j.progress))
+}
+
 function publicJob(j) {
   return {
+    eta: etaOf(j), startedAt: j.startedAt || null,
     id: j.id, state: j.state, step: j.step, progress: j.progress, error: j.error, code: j.code || null,
     title: j.options?.title, mode: j.options?.mode, createdAt: j.createdAt, credits: j.credits || [],
     tier: j.run?.tier || null, left: j.run?.left ?? null,
@@ -92,24 +105,31 @@ function assetUrl(abs) {
 }
 
 async function pump() {
-  if (running) return
+  if (running || paused) return
   const job = queue.shift()
   if (!job) return
   running = true
   job.state = 'running'
+  job.startedAt = Date.now()
+  job.progress = 0
   try {
     if (job.rerender) { job.say('rerender'); await renderProject(job, job.rerender, { assetUrl, draft: job.rerenderDraft }) }
     else await runPipeline(job, { assetUrl })
     job.state = 'done'
     job.progress = 1
+    if (!job.isDraft) addEvent(DATA, { kind: 'clip', key: 'evDone', vars: { title: job.options?.title || '' }, projectId: job.projectId || null, file: job.result ? path.basename(job.result) : null })
   } catch (e) {
     job.state = 'error'
     // Технические подробности — только в файл ошибок; пользователю — понятная фраза
     const known = ['auth', 'limit', 'busy', 'offline', 'needVideo', 'needItems', 'needTopic', 'notVideo'].find((c) => e.message === t(job.options?.lang, c))
+      || (e.message.startsWith(t(job.options?.lang, 'disk', { free: '', need: '' }).slice(0, 12)) ? 'disk' : null)
     job.code = e instanceof Cancelled ? 'cancelled' : known || 'error'
     job.error = e instanceof Cancelled ? t(job.options?.lang, 'cancelled') : known ? e.message : t(job.options?.lang, 'failed')
     job.log(job.error)
     if (!known && !(e instanceof Cancelled)) console.error(e)
+    addEvent(DATA, e instanceof Cancelled
+      ? { kind: 'system', key: 'evCancelled', vars: { title: job.options?.title || '' }, projectId: job.projectId || null }
+      : { kind: 'error', key: 'evFailed', vars: { title: job.options?.title || '', reason: job.code === 'error' ? 'failed' : job.code, ...(job.code === 'disk' ? { free: freeSpace(DATA).free, need: NEED_BYTES } : {}) }, details: job.code === 'disk' ? 'detDisk' : 'detFailed', projectId: job.projectId || null })
     // Сорвавшийся ролик возвращаем в лимит (кроме ошибок самого ключа и лимита)
     if (job.run?.runId && !job.rerender) { await portalRefund(job.options?.k, job.run.runId); job.run.left += 1; meCache = null }
   } finally {
@@ -124,14 +144,14 @@ async function pump() {
 
 function cors(req, res) {
   const origin = req.headers.origin
-  if (origin && ALLOWED_ORIGINS.has(origin)) {
+  if (origin && originOk(origin)) {
     res.setHeader('Access-Control-Allow-Origin', origin)
     res.setHeader('Vary', 'Origin')
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
     if (req.headers['access-control-request-private-network']) res.setHeader('Access-Control-Allow-Private-Network', 'true')
   }
-  return !origin || ALLOWED_ORIGINS.has(origin)
+  return !origin || originOk(origin)
 }
 
 function json(res, code, data) {
@@ -210,8 +230,8 @@ async function projectsApi(req, res, url, parts) {
   // Готовый ролик по имени файла из «Готово»: скачать, открыть, показать в папке, удалить
   if (parts[2] === 'file') {
     const name = path.basename(url.searchParams.get('name') || '')
-    const file = path.join(OUT_DIR, name)
-    if (!name || !fs.existsSync(file)) return json(res, 404, { error: 'no file' })
+    const file = name ? findOutput(DATA, name) : null
+    if (!file) return json(res, 404, { error: 'no file' })
     if (req.method === 'GET' && parts[3] === 'download') return sendFile(req, res, file, { download: url.searchParams.get('inline') !== '1' })
     if (req.method === 'POST' && parts[3] === 'reveal') { await reveal(file); return json(res, 200, { ok: true }) }
     if (req.method === 'DELETE') return json(res, 200, { ok: true, undo: trashItem(DATA, { file: name }) })
@@ -245,7 +265,8 @@ async function projectsApi(req, res, url, parts) {
   }
   if (req.method === 'POST' && parts[3] === 'reveal') {
     const last = project.outputs?.at(-1)
-    await reveal(last && fs.existsSync(path.join(OUT_DIR, last.file)) ? path.join(OUT_DIR, last.file) : dir)
+    const lastFile = last ? (last.dir ? path.join(last.dir, last.file) : findOutput(DATA, last.file)) : null
+    await reveal(lastFile && fs.existsSync(lastFile) ? lastFile : dir)
     return json(res, 200, { ok: true })
   }
   // Стікери проекта для превью в редакторе
@@ -270,6 +291,90 @@ async function projectsApi(req, res, url, parts) {
     job.say('rerender')
     queueProjectRender(job, project, body.draft === true)
     return json(res, 200, publicJob(job))
+  }
+  return json(res, 404, { error: 'not found' })
+}
+
+// --- Окно программы: очередь, место, события, отчёт, настройки -----------------------------
+const LANG = (url) => (LANGS.has(url.searchParams.get('lang')) ? url.searchParams.get('lang') : 'uk')
+let systemCache = null
+let repairing = null
+
+async function deskApi(req, res, url, parts) {
+  const lang = LANG(url)
+  // Текущий ролик, очередь, пауза — окно спрашивает раз в секунду
+  if (parts[1] === 'queue' && req.method === 'GET') {
+    const current = [...jobs.values()].find((j) => j.state === 'running')
+    return json(res, 200, { paused, current: current ? publicJob(current) : null, queued: queue.map(publicJob), version: VERSION })
+  }
+  if (parts[1] === 'queue' && parts[2] === 'pause' && req.method === 'POST') {
+    const body = await readJson(req)
+    paused = body.paused !== false
+    writeSettings(DATA, { paused })
+    addEvent(DATA, { kind: 'system', key: paused ? 'evPaused' : 'evResumed' })
+    if (!paused) pump()
+    return json(res, 200, { paused })
+  }
+  if (parts[1] === 'system' && req.method === 'GET') {
+    if (!systemCache || Date.now() - systemCache.at > 15_000 || url.searchParams.get('fresh')) {
+      const me = await currentMe()
+      const usage = diskUsage(DATA)
+      systemCache = { at: Date.now(), usage, checks: systemChecks(DATA, { connected: !!me, online: me !== null || !savedKey() }), me }
+    }
+    const { usage, checks, me } = systemCache
+    return json(res, 200, {
+      disk: { ...usage, human: Object.fromEntries(Object.entries({ free: usage.free, total: usage.total, cleanable: usage.cleanable, ...usage.parts }).map(([k, v]) => [k, humanSize(v, lang)])) },
+      checks, repairing: !!repairing, me, settings: { ...readSettings(DATA), outDir: outDir(DATA), defaultOutDir: path.join(DATA, 'Готово') },
+    })
+  }
+  if (parts[1] === 'events' && req.method === 'GET') {
+    return json(res, 200, { events: listEvents(DATA, lang, { after: Number(url.searchParams.get('after')) || 0, kind: url.searchParams.get('kind') || undefined }) })
+  }
+  if (parts[1] === 'cache' && parts[2] === 'clear' && req.method === 'POST') {
+    const busyDirs = [...jobs.values()].filter((j) => ['queued', 'running', 'uploading'].includes(j.state)).map((j) => j.dir)
+    const r = clearCache(DATA, { busyDirs })
+    systemCache = null
+    addEvent(DATA, { kind: 'system', key: 'evCache', vars: { size: humanSize(r.freed ?? 0, lang) } })
+    return json(res, 200, { freed: r.freed, human: humanSize(r.freed ?? 0, lang) })
+  }
+  if (parts[1] === 'report' && req.method === 'GET') {
+    const me = await currentMe()
+    const checks = systemChecks(DATA, { connected: !!me, online: me !== null || !savedKey() })
+    res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' })
+    return res.end(supportReport(DATA, { lang, version: VERSION, tier: me?.tier, checks }))
+  }
+  if (parts[1] === 'techlog' && req.method === 'GET') {
+    res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' })
+    return res.end(techLog(DATA, 300))
+  }
+  if (parts[1] === 'settings') {
+    if (req.method === 'PUT') {
+      const body = await readJson(req)
+      const patch = {}
+      if (typeof body.outDir === 'string') {
+        const dir = body.outDir.trim()
+        if (dir && !path.isAbsolute(dir)) return json(res, 400, { error: 'path' })
+        if (dir) fs.mkdirSync(dir, { recursive: true })
+        patch.outDir = dir || null
+      }
+      writeSettings(DATA, patch)
+      systemCache = null
+    }
+    return json(res, 200, { ...readSettings(DATA), outDir: outDir(DATA), defaultOutDir: path.join(DATA, 'Готово') })
+  }
+  // «Починить»: заново подготовить модель речи и движок сборки (то же, что при первом запуске)
+  if (parts[1] === 'repair' && req.method === 'POST') {
+    if (!repairing) {
+      repairing = spawn(process.execPath, [path.join(ROOT, 'scripts', 'prepare.mjs'), 'medium'], { cwd: DATA, env: process.env, stdio: ['ignore', 'ignore', 'pipe'] })
+      repairing.stderr.on('data', (d) => process.stderr.write(d))
+      repairing.on('close', (code) => {
+        if (code === 0) { try { fs.writeFileSync(path.join(DATA, '.cache', '.prepared-medium'), 'ok') } catch { /* нет папки */ } }
+        addEvent(DATA, { kind: code === 0 ? 'system' : 'error', key: code === 0 ? 'evRepairOk' : 'evRepairFail' })
+        repairing = null
+        systemCache = null
+      })
+    }
+    return json(res, 200, { repairing: true })
   }
   return json(res, 404, { error: 'not found' })
 }
@@ -317,6 +422,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (parts[0] === 'api' && parts[1] === 'projects') return projectsApi(req, res, url, parts)
+    if (parts[0] === 'api' && ['queue', 'system', 'events', 'cache', 'report', 'techlog', 'settings', 'repair'].includes(parts[1])) return deskApi(req, res, url, parts)
 
     // Шрифт стиля для превью: файлы скачиваются с Google Fonts один раз и дальше лежат на компьютере
     if (req.method === 'GET' && parts[0] === 'api' && parts[1] === 'fonts' && FONT[parts[2]]) {
@@ -442,6 +548,7 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, HOST, () => {
   note(t('uk', 'started'))
+  addEvent(DATA, { kind: 'system', key: 'evStarted' })
   if (process.argv.includes('--open')) {
     const url = `${PORTAL}/tools/farm`
     const cmd = process.platform === 'win32' ? ['cmd', ['/c', 'start', '', url]] : process.platform === 'darwin' ? ['open', [url]] : ['xdg-open', [url]]

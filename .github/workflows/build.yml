@@ -1,5 +1,7 @@
-# Builds the farm app (macOS first; Windows and Linux are prepared below) and publishes the installers as a GitHub release
-# of this repository (author: github-actions). A release is made once per app version.
+# Builds the farm app for macOS (Apple Silicon) and Windows (x64), publishes the installers as a GitHub release
+# of this repository (author: github-actions) and checks the Windows installer on the runner:
+# silent install, the app starts and prepares the generator, the self-test makes a short clip.
+# A release is made once per app version.
 name: Build the app
 
 on:
@@ -24,10 +26,10 @@ jobs:
           - os: macos-latest
             target: aarch64-apple-darwin
             args: --target aarch64-apple-darwin --bundles dmg
-          # Windows and Linux come next; uncomment to build them too
-          # - os: windows-latest
-          #   target: x86_64-pc-windows-msvc
-          #   args: --target x86_64-pc-windows-msvc --bundles nsis
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            args: --target x86_64-pc-windows-msvc --bundles nsis
+          # Linux comes next; uncomment to build it too
           # - os: ubuntu-22.04
           #   target: x86_64-unknown-linux-gnu
           #   args: --target x86_64-unknown-linux-gnu --bundles appimage,deb
@@ -66,3 +68,51 @@ jobs:
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
+
+      # Windows: install the fresh installer silently, start the app, wait for the generator, run the self-test
+      - name: Check the Windows installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem app/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*-setup.exe | Select-Object -First 1
+          Write-Host "Installer: $($setup.Name) $([math]::Round($setup.Length / 1MB)) MB"
+          New-Item -ItemType Directory -Force check | Out-Null
+          (Get-FileHash $setup.FullName -Algorithm SHA256).Hash | Out-File check/sha256.txt -Encoding ascii
+          Start-Process $setup.FullName -ArgumentList '/S' -Wait
+          $dir = Join-Path $env:LOCALAPPDATA 'TyneFarm'
+          Get-ChildItem $dir | Format-Table Name, Length | Out-String | Write-Host
+          $exe = Get-ChildItem $dir -Filter '*.exe' | Where-Object { $_.Name -notmatch 'uninstall|node|ffmpeg|ffprobe' } | Select-Object -First 1
+          Start-Process $exe.FullName
+          $ok = $false
+          for ($i = 0; $i -lt 180; $i++) {
+            try { $h = Invoke-RestMethod http://127.0.0.1:4747/api/health -TimeoutSec 3; if ($h.ok) { $ok = $true; break } } catch {}
+            Start-Sleep -Seconds 5
+          }
+          $data = Join-Path $env:USERPROFILE 'TyneFarm'
+          if ($ok) {
+            Invoke-RestMethod http://127.0.0.1:4747/api/health | ConvertTo-Json | Out-File check/health.json
+            Invoke-RestMethod 'http://127.0.0.1:4747/api/system?lang=en' | ConvertTo-Json -Depth 6 | Out-File check/system.json
+            Invoke-WebRequest 'http://127.0.0.1:4747/studio/' -UseBasicParsing | Select-Object StatusCode | ConvertTo-Json | Out-File check/studio.json
+          }
+          $env:FARM_DATA = $data
+          $env:FFMPEG_PATH = Join-Path $dir 'ffmpeg.exe'
+          $env:FFPROBE_PATH = Join-Path $dir 'ffprobe.exe'
+          Push-Location $data
+          & (Join-Path $dir 'node.exe') (Join-Path $dir 'generator/scripts/selftest.mjs')
+          $test = $LASTEXITCODE
+          Pop-Location
+          Copy-Item (Join-Path $data 'selftest.json') check/ -ErrorAction SilentlyContinue
+          Copy-Item (Join-Path $data '.cache/errors.log') check/ -ErrorAction SilentlyContinue
+          try { Invoke-WebRequest 'http://127.0.0.1:4747/api/report?lang=en' -UseBasicParsing | Select-Object -ExpandProperty Content | Out-File check/report.txt } catch {}
+          Get-Process -Name 'tyne-farm', 'TyneFarm', 'node' -ErrorAction SilentlyContinue | Stop-Process -Force
+          if (-not $ok) { Write-Host 'The generator did not start'; exit 1 }
+          if ($test -ne 0) { Write-Host 'The self-test failed'; exit 1 }
+          Write-Host 'Windows check passed'
+
+      - name: Windows check results
+        if: always() && runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-check
+          path: check/
+          if-no-files-found: ignore

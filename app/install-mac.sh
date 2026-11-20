@@ -22,8 +22,12 @@ hdiutil attach "$TMP/TyneFarm.dmg" -nobrowse -quiet -mountpoint "$TMP/mnt"
 DEST=/Applications
 [ -w "$DEST" ] || DEST="$HOME/Applications"
 mkdir -p "$DEST"
+# The running copy has to be fully closed first: otherwise the new copy finds it, hands over to it and exits,
+# and then the old copy finishes quitting, so nothing stays open
 osascript -e 'quit app "TyneFarm"' >/dev/null 2>&1 || true
-sleep 1
+for _ in $(seq 1 20); do pgrep -xq tyne-farm || break; sleep 0.5; done
+pkill -x tyne-farm >/dev/null 2>&1 || true
+for _ in $(seq 1 10); do pgrep -xq tyne-farm || break; sleep 0.5; done
 rm -rf "$DEST/TyneFarm.app"
 cp -R "$TMP/mnt/TyneFarm.app" "$DEST/"
 

@@ -5,160 +5,407 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>TyneFarm</title>
 <style>
-  /* The tyne.pro cabinet tokens */
+  /* Те саме оформлення, що й кабінет tyne.pro: теплі нейтральні кольори, бурштинові дії, дві теми за системою */
   :root {
-    --bg-base: #201f1e; --bg-surface: #2b2822; --bg-border: #3d3a33;
-    --text-primary: #f3eee6; --text-secondary: #c9c2b8; --text-muted: #b8b1a7;
-    --accent: rgb(240 163 58); --accent-rgb: 240 163 58; --on-accent: #1a1206;
-    --green: rgb(62 230 168); --red: rgb(255 122 107);
+    --bg: #201f1e; --surface: #2b2822; --raised: #35322c; --rule: #3d3a33;
+    --ink: #f3eee6; --sec: #c9c2b8; --mut: #b8b1a7;
+    --acc: 240 163 58; --on: #1a1206; --green: 62 230 168; --red: 255 122 107; --sky: 86 200 255;
     color-scheme: dark;
   }
   @media (prefers-color-scheme: light) {
-    :root { --bg-base: #f6f2ea; --bg-surface: #fffdf9; --bg-border: #e2dacb; --text-primary: #1b1712; --text-secondary: #514c45; --text-muted: #6b645a; --accent: rgb(196 112 10); --accent-rgb: 196 112 10; --on-accent: #fff; --green: rgb(10 140 96); --red: rgb(200 60 45); color-scheme: light; }
+    :root { --bg: #f6f2ea; --surface: #fffdf9; --raised: #efe9de; --rule: #ddd3c2; --ink: #1b1712; --sec: #514c45; --mut: #625c53; --acc: 139 86 10; --on: #fff; --green: 22 116 78; --red: 177 53 41; --sky: 23 105 145; color-scheme: light; }
   }
   * { box-sizing: border-box; }
-  html, body { margin: 0; background: var(--bg-base); color: var(--text-primary); font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
-  body { padding: 18px; display: grid; gap: 12px; min-height: 100vh; align-content: start; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  body { padding: 16px; display: grid; gap: 12px; align-content: start; }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  button:focus-visible, input:focus-visible { outline: 2px solid rgb(var(--acc)); outline-offset: 2px; }
   header { display: flex; align-items: center; gap: 12px; }
-  .logo { height: 44px; width: 44px; display: grid; place-items: center; border-radius: 14px; border: 1px solid var(--bg-border); background: var(--bg-surface); color: var(--accent); flex: none; }
-  .brand { min-width: 0; flex: 1; }
-  h1 { margin: 0; font-size: 19px; line-height: 1.2; font-weight: 700; }
-  .sub { margin: 1px 0 0; font-size: 13px; color: var(--text-muted); }
-  .badge { flex: none; border-radius: 999px; border: 1px solid rgb(var(--accent-rgb) / .5); background: rgb(var(--accent-rgb) / .1); color: var(--accent); padding: 4px 11px; font-size: 12.5px; font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
-  .badge[hidden] { display: none; }
-  .card { border-radius: 18px; border: 1px solid var(--bg-border); background: var(--bg-surface); padding: 6px 14px; }
-  .row { display: flex; align-items: center; gap: 10px; min-height: 52px; }
-  .row + .row { border-top: 1px solid var(--bg-border); }
-  .row .text { flex: 1; min-width: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--text-muted); flex: none; }
-  .dot.ok { background: var(--green); box-shadow: 0 0 0 4px rgb(62 230 168 / .15); }
-  .dot.amber { background: var(--accent); box-shadow: 0 0 0 4px rgb(var(--accent-rgb) / .15); }
-  .dot.wait { background: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
-  .dot.bad { background: var(--red); }
+  .logo { height: 42px; width: 42px; display: grid; place-items: center; border-radius: 13px; border: 1px solid var(--rule); background: var(--surface); color: rgb(var(--acc)); flex: none; }
+  .brand { flex: 1; min-width: 0; }
+  h1 { margin: 0; font-size: 18px; line-height: 1.2; font-weight: 700; }
+  .sub { margin: 1px 0 0; font-size: 12.5px; color: var(--mut); }
+  .badge { flex: none; border-radius: 999px; border: 1px solid rgb(var(--acc) / .5); background: rgb(var(--acc) / .1); color: rgb(var(--acc)); padding: 4px 11px; font-size: 12.5px; font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  [hidden] { display: none !important; }
+  .card { border-radius: 16px; border: 1px solid var(--rule); background: var(--surface); padding: 12px 14px; }
+  .card h2 { margin: 0 0 10px; font-size: 11.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--mut); font-weight: 700; display: flex; align-items: center; gap: 8px; }
+  .card h2 .grow { flex: 1; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .stat { display: grid; gap: 8px; align-content: start; }
+  .stat .line { display: flex; align-items: center; gap: 8px; font-weight: 600; min-width: 0; }
+  .stat .line span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--mut); flex: none; }
+  .dot.ok { background: rgb(var(--green)); box-shadow: 0 0 0 4px rgb(var(--green) / .15); }
+  .dot.acc { background: rgb(var(--acc)); box-shadow: 0 0 0 4px rgb(var(--acc) / .15); }
+  .dot.wait { background: rgb(var(--acc)); animation: pulse 1.2s ease-in-out infinite; }
+  .dot.bad { background: rgb(var(--red)); }
   @keyframes pulse { 50% { opacity: .35; } }
-  @media (prefers-reduced-motion: reduce) { .dot.wait { animation: none; } }
-  .small { flex: none; min-height: 36px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--bg-border); background: transparent; color: var(--text-secondary); font-family: inherit; font-size: 13.5px; font-weight: 500; cursor: pointer; }
-  .small:hover { color: var(--text-primary); border-color: rgb(var(--accent-rgb) / .5); }
-  .hint { margin: 0; padding: 0 0 12px; font-size: 13px; color: var(--text-secondary); }
-  .hint:empty { display: none; }
-  .btn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 48px; padding: 0 16px; border-radius: 12px; border: 0; font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer; transition: filter .15s, border-color .15s, color .15s; }
-  .btn.main { background: var(--accent); color: var(--on-accent); }
-  .btn.main:hover { filter: brightness(1.08); }
-  .btn.ghost { background: transparent; color: var(--text-primary); border: 1px solid var(--bg-border); font-weight: 500; }
-  .btn.ghost:hover { border-color: rgb(var(--accent-rgb) / .5); }
-  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-  .log-title { margin: 4px 0 0; font-size: 13px; font-weight: 600; color: var(--text-secondary); }
-  pre { margin: 0; min-height: 120px; max-height: 240px; overflow: auto; white-space: pre-wrap; word-break: break-word; font: 12.5px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--text-muted); border: 1px solid var(--bg-border); border-radius: 12px; padding: 10px 12px; background: var(--bg-surface); }
-  footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px; font-size: 12.5px; color: var(--text-muted); }
-  footer button { background: none; border: 0; padding: 6px 0; min-height: 32px; color: var(--text-secondary); font: inherit; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+  .hint { margin: 0; font-size: 12.5px; color: var(--sec); }
+  .small { min-height: 32px; padding: 0 11px; border-radius: 9px; border: 1px solid var(--rule); background: transparent; color: var(--sec); font-size: 13px; font-weight: 500; white-space: nowrap; }
+  .small:hover { color: var(--ink); border-color: rgb(var(--acc) / .5); }
+  .small.danger { color: rgb(var(--red)); }
+  .small.acc { border-color: rgb(var(--acc) / .6); color: rgb(var(--acc)); }
+  .small:disabled { opacity: .45; cursor: default; }
+  .btn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 44px; padding: 0 14px; border-radius: 12px; border: 0; font-size: 14.5px; font-weight: 600; }
+  .btn.main { background: rgb(var(--acc)); color: var(--on); }
+  .btn.main:hover { filter: brightness(1.07); }
+  .btn.ghost { background: transparent; border: 1px solid var(--rule); font-weight: 500; }
+  .btn.ghost:hover { border-color: rgb(var(--acc) / .5); }
+  .update { display: flex; align-items: center; gap: 10px; border-color: rgb(var(--acc) / .55); background: rgb(var(--acc) / .08); }
+  .update p { margin: 0; flex: 1; font-weight: 600; }
+  .task-title { font-weight: 700; font-size: 15px; margin: 0 0 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .task-step { margin: 0 0 8px; color: var(--sec); font-size: 13px; display: flex; gap: 8px; }
+  .task-step b { margin-left: auto; font-variant-numeric: tabular-nums; color: var(--ink); }
+  .bar { height: 8px; border-radius: 999px; background: var(--raised); overflow: hidden; margin-bottom: 10px; }
+  .bar i { display: block; height: 100%; background: rgb(var(--acc)); border-radius: 999px; transition: width .4s ease; }
+  .steps { display: flex; gap: 4px; margin: 0 0 10px; padding: 0; list-style: none; flex-wrap: wrap; }
+  .steps li { font-size: 11.5px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--rule); color: var(--mut); }
+  .steps li.done { color: rgb(var(--green)); border-color: rgb(var(--green) / .4); }
+  .steps li.now { color: rgb(var(--acc)); border-color: rgb(var(--acc) / .6); background: rgb(var(--acc) / .08); font-weight: 600; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .row .grow { flex: 1; }
+  .queue { margin: 10px 0 0; padding: 0; list-style: none; border-top: 1px solid var(--rule); }
+  .queue li { padding: 7px 0; border-bottom: 1px solid var(--rule); font-size: 13px; display: flex; gap: 8px; align-items: center; }
+  .queue li span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .empty { color: var(--mut); font-size: 13px; margin: 0; }
+  .disk-bar { height: 10px; border-radius: 999px; background: var(--raised); overflow: hidden; display: flex; margin: 6px 0 8px; }
+  .disk-bar i { display: block; height: 100%; }
+  .legend { display: grid; grid-template-columns: 1fr auto; gap: 3px 10px; font-size: 12.5px; color: var(--sec); margin-bottom: 10px; font-variant-numeric: tabular-nums; }
+  .legend span:nth-child(even) { text-align: right; color: var(--ink); }
+  .sw { display: inline-block; width: 9px; height: 9px; border-radius: 3px; margin-right: 6px; vertical-align: 0; }
+  .tabs { display: flex; gap: 6px; }
+  .chip { min-height: 28px; padding: 0 11px; border-radius: 999px; border: 1px solid var(--rule); background: transparent; color: var(--sec); font-size: 12.5px; }
+  .chip.on { border-color: rgb(var(--acc) / .6); background: rgb(var(--acc) / .1); color: rgb(var(--acc)); font-weight: 600; }
+  .events { list-style: none; margin: 8px 0 10px; padding: 0; max-height: 300px; overflow: auto; }
+  .events li { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; padding: 8px 0; border-bottom: 1px solid var(--rule); font-size: 13px; }
+  .events li:last-child { border-bottom: 0; }
+  .events .ic { grid-row: span 2; width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center; font-size: 13px; background: var(--raised); }
+  .events .ic.clip { background: rgb(var(--green) / .15); color: rgb(var(--green)); }
+  .events .ic.error { background: rgb(var(--red) / .15); color: rgb(var(--red)); }
+  .events time { font-size: 11.5px; color: var(--mut); font-variant-numeric: tabular-nums; margin-right: 6px; }
+  .events .acts { display: flex; gap: 6px; margin-top: 4px; }
+  .events .acts button { min-height: 26px; font-size: 12px; padding: 0 9px; }
+  .events .det { color: var(--sec); font-size: 12.5px; margin: 4px 0 0; }
+  pre { margin: 8px 0 0; max-height: 200px; overflow: auto; white-space: pre-wrap; word-break: break-word; font: 11.5px/1.55 ui-monospace, Menlo, monospace; color: var(--mut); border: 1px solid var(--rule); border-radius: 10px; padding: 8px 10px; background: var(--bg); }
+  .checks { list-style: none; margin: 0 0 4px; padding: 0; }
+  .checks li { display: flex; align-items: center; gap: 8px; padding: 6px 0; font-size: 13px; }
+  .checks li span:not(.dot) { flex: 1; }
+  .set { display: grid; gap: 10px; }
+  .set .path { font-size: 12.5px; color: var(--sec); word-break: break-all; }
+  .toggle { display: flex; align-items: center; gap: 10px; font-size: 13.5px; }
+  .toggle input { width: 18px; height: 18px; accent-color: rgb(var(--acc)); }
+  .toast { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); background: var(--raised); border: 1px solid var(--rule); border-radius: 12px; padding: 8px 14px; font-size: 13px; box-shadow: 0 10px 30px rgba(0, 0, 0, .35); }
+  footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px; font-size: 12.5px; color: var(--mut); }
+  footer button { background: none; border: 0; padding: 4px 0; color: var(--sec); text-decoration: underline; text-underline-offset: 3px; }
+  @media (prefers-reduced-motion: reduce) { .dot.wait { animation: none; } .bar i { transition: none; } }
 </style>
 </head>
 <body>
   <header>
-    <span class="logo" aria-hidden="true">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.2 6 3 11l-.9-2.4c-.3-1.1.3-2.2 1.3-2.5l13.5-4c1.1-.3 2.2.3 2.5 1.3Z"/><path d="m6.2 5.3 3.1 3.9"/><path d="m12.4 3.4 3.1 4"/><path d="M3 11h18v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>
-    </span>
-    <div class="brand">
-      <h1 data-t="title">Ферма роликів</h1>
-      <p class="sub">tyne.pro</p>
-    </div>
+    <span class="logo" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.2 6 3 11l-.9-2.4c-.3-1.1.3-2.2 1.3-2.5l13.5-4c1.1-.3 2.2.3 2.5 1.3Z"/><path d="m6.2 5.3 3.1 3.9"/><path d="m12.4 3.4 3.1 4"/><path d="M3 11h18v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg></span>
+    <div class="brand"><h1 data-t="title">Ферма роликів</h1><p class="sub">tyne.pro</p></div>
     <span class="badge" id="badge" hidden></span>
   </header>
 
-  <section class="card" aria-live="polite">
-    <div class="row">
-      <span class="dot wait" id="genDot"></span><span class="text" id="genText">…</span>
-      <button class="small" id="restart" data-t="restart">Перезапустити</button>
-    </div>
-    <p class="hint" id="genHint"></p>
-    <div class="row">
-      <span class="dot" id="cabDot"></span><span class="text" id="cabText"></span>
-      <button class="small" id="cabBtn"></button>
-    </div>
+  <section class="card update" id="update" hidden>
+    <p id="updText"></p>
+    <button class="small acc" id="updBtn" data-t="update"></button>
   </section>
 
-  <button class="btn main" id="open" data-t="open">Відкрити ферму в кабінеті</button>
-  <div class="pair">
-    <button class="btn ghost" id="clips" data-t="clips">Мої ролики й редактор</button>
-    <button class="btn ghost" id="done" data-t="done">Папка «Готово»</button>
+  <div class="grid2">
+    <section class="card stat" aria-live="polite">
+      <h2 data-t="generator"></h2>
+      <div class="line"><span class="dot wait" id="genDot"></span><span id="genText">…</span></div>
+      <p class="hint" id="genHint"></p>
+      <button class="small" id="restart" data-t="restart"></button>
+    </section>
+    <section class="card stat">
+      <h2 data-t="cabinet"></h2>
+      <div class="line"><span class="dot" id="cabDot"></span><span id="cabText"></span></div>
+      <button class="small" id="cabBtn"></button>
+    </section>
   </div>
 
-  <p class="log-title" data-t="log">Журнал</p>
-  <pre id="log"></pre>
+  <section class="card" aria-live="polite">
+    <h2><span class="grow" data-t="now"></span><span id="pausedTag" class="badge" hidden data-t="pausedTag"></span></h2>
+    <div id="task" hidden>
+      <p class="task-title" id="taskTitle"></p>
+      <p class="task-step"><span id="taskStep"></span><span id="taskEta"></span><b id="taskPct"></b></p>
+      <div class="bar"><i id="taskBar" style="width:0"></i></div>
+      <ol class="steps" id="taskSteps"></ol>
+    </div>
+    <p class="empty" id="idle"></p>
+    <div class="row" style="margin-top:10px">
+      <button class="small" id="pauseBtn"></button>
+      <button class="small danger" id="cancelBtn" data-t="cancel" hidden></button>
+    </div>
+    <ul class="queue" id="queue" hidden></ul>
+  </section>
+
+  <button class="btn main" id="open" data-t="open"></button>
+  <div class="grid2">
+    <button class="btn ghost" id="clips" data-t="clips"></button>
+    <button class="btn ghost" id="done" data-t="done"></button>
+  </div>
+
+  <section class="card">
+    <h2 data-t="disk"></h2>
+    <div class="row"><b id="diskFree"></b></div>
+    <div class="disk-bar" id="diskBar"></div>
+    <div class="legend" id="legend"></div>
+    <div class="row"><button class="small acc" id="clearBtn"></button><span class="hint grow" id="clearRes"></span></div>
+  </section>
+
+  <section class="card">
+    <h2><span class="grow" data-t="events"></span></h2>
+    <div class="tabs" role="tablist">
+      <button class="chip on" data-f="" data-t="fAll"></button>
+      <button class="chip" data-f="error" data-t="fErrors"></button>
+      <button class="chip" data-f="clip" data-t="fClips"></button>
+    </div>
+    <ul class="events" id="events"></ul>
+    <div class="row">
+      <button class="small" id="reportBtn" data-t="report"></button>
+      <button class="small" id="techBtn" data-t="tech"></button>
+    </div>
+    <pre id="tech" hidden></pre>
+  </section>
+
+  <section class="card">
+    <h2 data-t="check"></h2>
+    <ul class="checks" id="checks"></ul>
+  </section>
+
+  <section class="card set">
+    <h2 data-t="settings"></h2>
+    <div>
+      <div class="row"><span class="grow" data-t="doneFolder"></span><button class="small" id="pickBtn" data-t="change"></button><button class="small" id="resetBtn" data-t="reset" hidden></button></div>
+      <p class="path" id="outDir"></p>
+    </div>
+    <label class="toggle"><input type="checkbox" id="autostart"><span data-t="autostart"></span></label>
+  </section>
 
   <footer>
     <span id="ver"></span>
-    <button id="code" data-t="code">Код на GitHub</button>
-    <button id="folder" data-t="folder">Папка ферми</button>
+    <button id="code" data-t="code"></button>
+    <button id="folder" data-t="folder"></button>
   </footer>
+  <div class="toast" id="toast" hidden></div>
 
 <script>
   const T = {
-    uk: { clips: 'Мої ролики й редактор', title: 'Ферма роликів', restart: 'Перезапустити', open: 'Відкрити ферму в кабінеті', done: 'Папка «Готово»', code: 'Код на GitHub', log: 'Журнал', folder: 'Папка ферми',
-      running: 'Генератор працює', preparing: 'Перший запуск: готуємо програму', starting: 'Запускаємо генератор…', stopped: 'Генератор зупинено', error: 'Генератор не запустився', idle: 'Запускаємо…',
-      hPreparing: 'Один раз, ~1.7 ГБ, 5–15 хвилин. Вікно можна згорнути.', hError: 'Натисніть «Перезапустити».', hStopped: 'Натисніть «Перезапустити».',
-      connected: 'Кабінет підключено', notConnected: 'Кабінет не підключено', connect: 'Підключити кабінет', disconnect: 'Відключити',
-      demo: 'Демо', premium: 'Premium', pro: 'Pro', of: 'з', version: 'Версія' },
-    ru: { clips: 'Мои ролики и редактор', title: 'Ферма роликов', restart: 'Перезапустить', open: 'Открыть ферму в кабинете', done: 'Папка «Готово»', code: 'Код на GitHub', log: 'Журнал', folder: 'Папка фермы',
-      running: 'Генератор работает', preparing: 'Первый запуск: готовим программу', starting: 'Запускаем генератор…', stopped: 'Генератор остановлен', error: 'Генератор не запустился', idle: 'Запускаем…',
-      hPreparing: 'Один раз, ~1.7 ГБ, 5–15 минут. Окно можно свернуть.', hError: 'Нажмите «Перезапустить».', hStopped: 'Нажмите «Перезапустить».',
-      connected: 'Кабинет подключён', notConnected: 'Кабинет не подключён', connect: 'Подключить кабинет', disconnect: 'Отключить',
-      demo: 'Демо', premium: 'Premium', pro: 'Pro', of: 'из', version: 'Версия' },
-    en: { clips: 'My clips and editor', title: 'Video farm', restart: 'Restart', open: 'Open the farm in the cabinet', done: 'Finished clips', code: 'Code on GitHub', log: 'Log', folder: 'Farm folder',
-      running: 'Generator is running', preparing: 'First run: preparing the app', starting: 'Starting the generator…', stopped: 'Generator stopped', error: 'Generator did not start', idle: 'Starting…',
-      hPreparing: 'Once, ~1.7 GB, 5–15 minutes. You can minimise the window.', hError: 'Press Restart.', hStopped: 'Press Restart.',
-      connected: 'Cabinet connected', notConnected: 'Cabinet not connected', connect: 'Connect the cabinet', disconnect: 'Disconnect',
-      demo: 'Demo', premium: 'Premium', pro: 'Pro', of: 'of', version: 'Version' },
+    uk: { title: 'Ферма роликів', update: 'Оновити', updText: 'Є нова версія {v}', updating: 'Оновлюємо, програма перезапуститься…',
+      generator: 'Генератор', cabinet: 'Кабінет', restart: 'Перезапустити',
+      running: 'Працює', preparing: 'Готуємо програму', starting: 'Запускаємо…', stopped: 'Зупинено', error: 'Не запустився', idle: 'Запускаємо…',
+      hPreparing: 'Один раз, ~1.7 ГБ, 5–15 хвилин. Вікно можна закрити.', hError: 'Натисніть «Перезапустити».', hStopped: 'Натисніть «Перезапустити».', hRestarted: 'Перезапущено автоматично',
+      connected: 'Підключено', notConnected: 'Не підключено', connect: 'Підключити', disconnect: 'Відключити',
+      now: 'Зараз', pausedTag: 'Черга на паузі', idleText: 'Зараз нічого не збирається. Створіть ролик на сторінці ферми.', idlePaused: 'Черга на паузі: нові ролики чекають.',
+      pause: 'Пауза черги', resume: 'Продовжити', cancel: 'Скасувати', left: 'залишилось ~{t}', next: 'Далі в черзі', min: 'хв', sec: 'с',
+      s_check: 'Перевірка', s_prepare: 'Підготовка', s_speech: 'Мова', s_text: 'Текст', s_stickers: 'Стікери', s_render: 'Збирання',
+      open: 'Відкрити ферму в кабінеті', clips: 'Мої ролики й редактор', done: 'Папка «Готово»',
+      disk: 'Місце на диску', free: 'Вільно {f} з {t}', p_model: 'Модель мови', p_render: 'Збирання відео', p_cache: 'Кеш (можна очистити)', p_projects: 'Проєкти', p_done: 'Готові ролики',
+      clear: 'Очистити кеш ({s})', cleared: 'Звільнено {s}', lowDisk: 'Мало місця: перед збиранням потрібно хоча б 1,5 ГБ',
+      events: 'Події', fAll: 'Усі', fErrors: 'Помилки', fClips: 'Ролики', noEvents: 'Поки що подій немає',
+      openClip: 'Відкрити', showFile: 'Показати', details: 'Подробиці', report: 'Скопіювати звіт для підтримки', copied: 'Звіт скопійовано: без ключів і особистих шляхів',
+      tech: 'Технічний журнал', techEmpty: 'Технічний журнал порожній',
+      check: 'Перевірка системи', c_model: 'Модель розпізнавання мови', c_render: 'Програма збирання відео', c_disk: 'Місце на диску', c_cabinet: 'Звʼязок із кабінетом', c_internet: 'Інтернет',
+      fix: 'Полагодити', fixing: 'Готуємо…',
+      settings: 'Налаштування', doneFolder: 'Папка «Готово»', change: 'Змінити', reset: 'Як було', autostart: 'Запускати разом із входом у систему',
+      code: 'Код на GitHub', folder: 'Папка ферми', version: 'Версія', demo: 'Демо', premium: 'Premium', pro: 'Pro', of: 'з' },
+    ru: { title: 'Ферма роликов', update: 'Обновить', updText: 'Есть новая версия {v}', updating: 'Обновляем, программа перезапустится…',
+      generator: 'Генератор', cabinet: 'Кабинет', restart: 'Перезапустить',
+      running: 'Работает', preparing: 'Готовим программу', starting: 'Запускаем…', stopped: 'Остановлен', error: 'Не запустился', idle: 'Запускаем…',
+      hPreparing: 'Один раз, ~1.7 ГБ, 5–15 минут. Окно можно закрыть.', hError: 'Нажмите «Перезапустить».', hStopped: 'Нажмите «Перезапустить».', hRestarted: 'Перезапущен автоматически',
+      connected: 'Подключён', notConnected: 'Не подключён', connect: 'Подключить', disconnect: 'Отключить',
+      now: 'Сейчас', pausedTag: 'Очередь на паузе', idleText: 'Сейчас ничего не собирается. Создайте ролик на странице фермы.', idlePaused: 'Очередь на паузе: новые ролики ждут.',
+      pause: 'Пауза очереди', resume: 'Продолжить', cancel: 'Отменить', left: 'осталось ~{t}', next: 'Дальше в очереди', min: 'мин', sec: 'с',
+      s_check: 'Проверка', s_prepare: 'Подготовка', s_speech: 'Речь', s_text: 'Текст', s_stickers: 'Стикеры', s_render: 'Сборка',
+      open: 'Открыть ферму в кабинете', clips: 'Мои ролики и редактор', done: 'Папка «Готово»',
+      disk: 'Место на диске', free: 'Свободно {f} из {t}', p_model: 'Модель речи', p_render: 'Сборка видео', p_cache: 'Кеш (можно очистить)', p_projects: 'Проекты', p_done: 'Готовые ролики',
+      clear: 'Очистить кеш ({s})', cleared: 'Освобождено {s}', lowDisk: 'Мало места: для сборки нужно хотя бы 1,5 ГБ',
+      events: 'События', fAll: 'Все', fErrors: 'Ошибки', fClips: 'Ролики', noEvents: 'Пока событий нет',
+      openClip: 'Открыть', showFile: 'Показать', details: 'Подробнее', report: 'Скопировать отчёт для поддержки', copied: 'Отчёт скопирован: без ключей и личных путей',
+      tech: 'Технический журнал', techEmpty: 'Технический журнал пуст',
+      check: 'Проверка системы', c_model: 'Модель распознавания речи', c_render: 'Программа сборки видео', c_disk: 'Место на диске', c_cabinet: 'Связь с кабинетом', c_internet: 'Интернет',
+      fix: 'Починить', fixing: 'Готовим…',
+      settings: 'Настройки', doneFolder: 'Папка «Готово»', change: 'Изменить', reset: 'Как было', autostart: 'Запускать вместе со входом в систему',
+      code: 'Код на GitHub', folder: 'Папка фермы', version: 'Версия', demo: 'Демо', premium: 'Premium', pro: 'Pro', of: 'из' },
+    en: { title: 'Video farm', update: 'Update', updText: 'Version {v} is available', updating: 'Updating, the app will restart…',
+      generator: 'Generator', cabinet: 'Cabinet', restart: 'Restart',
+      running: 'Running', preparing: 'Preparing the app', starting: 'Starting…', stopped: 'Stopped', error: 'Did not start', idle: 'Starting…',
+      hPreparing: 'Once, ~1.7 GB, 5–15 minutes. You can close the window.', hError: 'Press Restart.', hStopped: 'Press Restart.', hRestarted: 'Restarted automatically',
+      connected: 'Connected', notConnected: 'Not connected', connect: 'Connect', disconnect: 'Disconnect',
+      now: 'Now', pausedTag: 'Queue paused', idleText: 'Nothing is being made right now. Create a clip on the farm page.', idlePaused: 'The queue is paused: new clips are waiting.',
+      pause: 'Pause queue', resume: 'Resume', cancel: 'Cancel', left: '~{t} left', next: 'Next in queue', min: 'min', sec: 's',
+      s_check: 'Check', s_prepare: 'Prepare', s_speech: 'Speech', s_text: 'Text', s_stickers: 'Stickers', s_render: 'Render',
+      open: 'Open the farm in the cabinet', clips: 'My clips and editor', done: 'Finished clips',
+      disk: 'Disk space', free: '{f} free of {t}', p_model: 'Speech model', p_render: 'Video engine', p_cache: 'Cache (can be cleared)', p_projects: 'Projects', p_done: 'Finished clips',
+      clear: 'Clear cache ({s})', cleared: '{s} freed', lowDisk: 'Low space: at least 1.5 GB is needed to render',
+      events: 'Events', fAll: 'All', fErrors: 'Errors', fClips: 'Clips', noEvents: 'No events yet',
+      openClip: 'Open', showFile: 'Show', details: 'Details', report: 'Copy report for support', copied: 'Report copied: no keys or personal paths',
+      tech: 'Technical log', techEmpty: 'The technical log is empty',
+      check: 'System check', c_model: 'Speech recognition model', c_render: 'Video render engine', c_disk: 'Disk space', c_cabinet: 'Cabinet connection', c_internet: 'Internet',
+      fix: 'Fix', fixing: 'Preparing…',
+      settings: 'Settings', doneFolder: 'Finished clips folder', change: 'Change', reset: 'Default', autostart: 'Start when I log in',
+      code: 'Code on GitHub', folder: 'Farm folder', version: 'Version', demo: 'Demo', premium: 'Premium', pro: 'Pro', of: 'of' },
   }
   const nav = (navigator.language || 'uk').slice(0, 2)
   const lang = nav === 'ru' ? 'ru' : nav === 'en' ? 'en' : 'uk'
-  const t = T[lang]
+  const t = (k, v = {}) => String(T[lang][k] ?? T.uk[k] ?? k).replace(/\{(\w+)\}/g, (_, x) => v[x] ?? '')
   document.documentElement.lang = lang
-  document.querySelectorAll('[data-t]').forEach((el) => { el.textContent = t[el.dataset.t] })
+  document.querySelectorAll('[data-t]').forEach((el) => { el.textContent = t(el.dataset.t) })
 
   const { invoke } = window.__TAURI__.core
   const { listen } = window.__TAURI__.event
+  // Генератор на цьому компʼютері (для перевірки сторінки в браузері — ?gen=…)
+  const GEN = new URLSearchParams(location.search).get('gen') || 'http://127.0.0.1:4747'
   const $ = (id) => document.getElementById(id)
-  const logEl = $('log')
+  const api = (p, init) => fetch(GEN + p, init).then((r) => (r.headers.get('content-type') || '').includes('json') ? r.json() : r.text())
+  const post = (p, body) => api(p, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) })
+  const toast = (text) => { const el = $('toast'); el.textContent = text; el.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => { el.hidden = true }, 3200) }
+  const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
+  const fmtLeft = (s) => (s >= 90 ? `${Math.round(s / 60)} ${t('min')}` : `${Math.max(1, s)} ${t('sec')}`)
+  const time = (ms) => new Date(ms).toLocaleTimeString(lang === 'uk' ? 'uk-UA' : lang === 'ru' ? 'ru-RU' : 'en-GB', { hour: '2-digit', minute: '2-digit' })
+  const STEPS = ['check', 'prepare', 'speech', 'text', 'stickers', 'render']
   const DOT = { running: 'ok', preparing: 'wait', starting: 'wait', idle: 'wait', stopped: 'bad', error: 'bad' }
-  const HINT = { preparing: 'hPreparing', stopped: 'hStopped', error: 'hError' }
   let connected = false
+  let current = null
+  let paused = false
 
-  function render(s) {
+  // Програма: стан генератора, кабінет, тариф, версія
+  async function refreshApp() {
+    const s = await invoke('farm_status').catch(() => null)
+    if (!s) return
     const phase = s.phase || 'idle'
     $('genDot').className = 'dot ' + (DOT[phase] || 'wait')
-    $('genText').textContent = t[phase] || t.idle
-    $('genHint').textContent = t[HINT[phase]] || ''
+    $('genText').textContent = t(phase)
+    $('genHint').textContent = phase === 'preparing' ? t('hPreparing') : phase === 'error' ? t('hError') : phase === 'stopped' ? t('hStopped') : s.restarts ? t('hRestarted') : ''
     connected = !!s.connected
     const me = s.me
-    $('cabDot').className = 'dot ' + (connected && me ? 'amber' : '')
-    $('cabText').textContent = connected ? (me && me.login ? `${t.connected} · @${me.login}` : t.connected) : t.notConnected
-    $('cabBtn').textContent = connected ? t.disconnect : t.connect
-    const badge = $('badge')
-    if (me && me.tier) {
-      badge.hidden = false
-      badge.textContent = `${t[me.tier] || me.tier} · ${me.left} ${t.of} ${me.limits.clips}`
-    } else badge.hidden = true
-    $('ver').textContent = `${t.version} ${s.version}`
-    const atEnd = logEl.scrollTop + logEl.clientHeight >= logEl.scrollHeight - 8
-    logEl.textContent = s.log.join('\n')
-    if (atEnd) logEl.scrollTop = logEl.scrollHeight
+    $('cabDot').className = 'dot ' + (connected && me ? 'acc' : connected ? 'wait' : '')
+    $('cabText').textContent = connected ? (me && me.login ? `${t('connected')} · @${me.login}` : t('connected')) : t('notConnected')
+    $('cabBtn').textContent = connected ? t('disconnect') : t('connect')
+    if (me && me.tier) { $('badge').hidden = false; $('badge').textContent = `${t(me.tier)} · ${me.left} ${t('of')} ${me.limits.clips}` } else $('badge').hidden = true
+    $('ver').textContent = `${t('version')} ${s.version}`
+    refreshApp.version = s.version
   }
-  const refresh = () => invoke('farm_status').then(render).catch(() => {})
-  refresh()
-  setInterval(refresh, 2500)
-  listen('farm-phase', refresh)
-  listen('farm-connected', refresh)
-  listen('farm-log', refresh)
 
+  // Поточний ролик, проценти, скільки залишилось, черга
+  async function refreshQueue() {
+    const q = await api('/api/queue').catch(() => null)
+    if (!q) return
+    paused = q.paused
+    current = q.current
+    $('pausedTag').hidden = !paused
+    $('pauseBtn').textContent = paused ? t('resume') : t('pause')
+    $('task').hidden = !current
+    $('cancelBtn').hidden = !current
+    $('idle').hidden = !!current
+    $('idle').textContent = paused ? t('idlePaused') : t('idleText')
+    if (current) {
+      const pct = Math.round((current.progress || 0) * 100)
+      $('taskTitle').textContent = current.title || '—'
+      $('taskStep').textContent = t('s_' + (current.step || 'check'))
+      $('taskEta').textContent = current.eta ? '· ' + t('left', { t: fmtLeft(current.eta) }) : ''
+      $('taskPct').textContent = pct + '%'
+      $('taskBar').style.width = pct + '%'
+      const at = STEPS.indexOf(current.step || 'check')
+      $('taskSteps').innerHTML = STEPS.filter((s) => s !== 'speech' || current.mode === 'cut').map((s) => `<li class="${STEPS.indexOf(s) < at ? 'done' : STEPS.indexOf(s) === at ? 'now' : ''}">${t('s_' + s)}</li>`).join('')
+    }
+    $('queue').hidden = !q.queued.length
+    $('queue').innerHTML = q.queued.length ? `<li><b>${t('next')}</b></li>` + q.queued.map((j) => `<li><span>${esc(j.title || '—')}</span><button class="small" data-cancel="${j.id}">${t('cancel')}</button></li>`).join('') : ''
+  }
+
+  // Місце на диску, перевірка системи, налаштування
+  async function refreshSystem(fresh) {
+    const s = await api('/api/system?lang=' + lang + (fresh ? '&fresh=1' : '')).catch(() => null)
+    if (!s) return
+    const d = s.disk
+    $('diskFree').textContent = t('free', { f: d.human.free, t: d.human.total }) + (d.free != null && d.free < 1.5 * 1024 ** 3 ? ' · ' + t('lowDisk') : '')
+    const parts = [['model', 'var(--mut)'], ['render', 'rgb(var(--sky))'], ['cache', 'rgb(var(--acc))'], ['projects', 'rgb(var(--green))'], ['done', 'rgb(var(--red))']]
+    const val = (k) => (k === 'cache' ? d.cleanable : d.parts[k]) || 0
+    // Смуга — з чого складається місце ферми; вільне місце диска написане над нею
+    const total = parts.reduce((s, [k]) => s + val(k), 0) || 1
+    $('diskBar').innerHTML = parts.map(([k, c]) => `<i style="width:${Math.max(0.4, (val(k) / total) * 100)}%;background:${c}"></i>`).join('')
+    $('legend').innerHTML = parts.map(([k, c]) => `<span><i class="sw" style="background:${c}"></i>${t('p_' + k)}</span><span>${k === 'cache' ? d.human.cleanable : d.human[k]}</span>`).join('')
+    $('clearBtn').textContent = t('clear', { s: d.human.cleanable })
+    $('clearBtn').disabled = !d.cleanable
+    $('checks').innerHTML = s.checks.map((c) => `<li><span class="dot ${c.ok ? 'ok' : 'bad'}"></span><span>${t('c_' + c.id)}</span>${c.ok ? '' : c.fix ? `<button class="small acc" data-fix="${c.fix}">${s.repairing && c.fix === 'prepare' ? t('fixing') : t('fix')}</button>` : ''}</li>`).join('')
+    $('outDir').textContent = s.settings.outDir
+    $('resetBtn').hidden = s.settings.outDir === s.settings.defaultOutDir
+  }
+
+  // Події на мові вікна
+  let filter = ''
+  async function refreshEvents() {
+    const r = await api('/api/events?lang=' + lang + (filter ? '&kind=' + filter : '')).catch(() => null)
+    if (!r) return
+    const list = r.events.slice(-40).reverse()
+    $('events').innerHTML = list.length ? list.map((e) => `<li><span class="ic ${e.kind}">${e.kind === 'clip' ? '✓' : e.kind === 'error' ? '!' : '•'}</span>
+      <div><time>${time(e.at)}</time>${esc(e.text)}
+      ${e.kind === 'clip' || e.details ? `<div class="acts">${e.projectId ? `<button class="small" data-edit="${e.projectId}">${t('openClip')}</button>` : ''}${e.file ? `<button class="small" data-show="${esc(e.file)}">${t('showFile')}</button>` : ''}${e.details ? `<button class="small" data-det="${e.id}">${t('details')}</button>` : ''}</div>` : ''}
+      ${e.details ? `<p class="det" id="det${e.id}" hidden>${esc(e.details)}</p>` : ''}</div></li>`).join('') : `<li><span></span><span class="empty">${t('noEvents')}</span></li>`
+  }
+
+  // Нова версія на GitHub: оновлення одним натисканням
+  async function checkUpdate() {
+    try {
+      const r = await fetch('https://api.github.com/repos/tyne-pro/video-farm/releases/latest').then((x) => x.json())
+      const latest = String(r.tag_name || '').replace(/^v/, '')
+      const cur = refreshApp.version
+      const newer = (a, b) => { const x = a.split('.').map(Number), y = b.split('.').map(Number); for (let i = 0; i < 3; i++) { if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0) } return false }
+      if (latest && cur && newer(latest, cur)) { $('update').hidden = false; $('updText').textContent = t('updText', { v: latest }) }
+    } catch { /* немає інтернету — спробуємо пізніше */ }
+  }
+
+  // Дії
+  document.addEventListener('click', async (e) => {
+    const b = e.target.closest('button')
+    if (!b) return
+    if (b.dataset.cancel) { await post(`/api/jobs/${b.dataset.cancel}/cancel`); refreshQueue() }
+    if (b.dataset.edit) invoke('open_link', { path: `${GEN}/studio/?lang=${lang}#/edit/${b.dataset.edit}` })
+    if (b.dataset.show) post(`/api/projects/file/reveal?name=${encodeURIComponent(b.dataset.show)}`)
+    if (b.dataset.det) { const p = $('det' + b.dataset.det); p.hidden = !p.hidden }
+    if (b.dataset.fix === 'prepare') { await post('/api/repair'); refreshSystem(true) }
+    if (b.dataset.fix === 'cache') $('clearBtn').click()
+    if (b.dataset.fix === 'connect') invoke('open_link', { path: '/tools/farm#app' })
+    if (b.dataset.f !== undefined && b.classList.contains('chip')) {
+      filter = b.dataset.f
+      document.querySelectorAll('.tabs .chip').forEach((c) => c.classList.toggle('on', c === b))
+      refreshEvents()
+    }
+  })
+  $('pauseBtn').onclick = async () => { await post('/api/queue/pause', { paused: !paused }); refreshQueue(); refreshEvents() }
+  $('cancelBtn').onclick = async () => { if (current) await post(`/api/jobs/${current.id}/cancel`); refreshQueue() }
+  $('clearBtn').onclick = async () => { const r = await post('/api/cache/clear'); $('clearRes').textContent = t('cleared', { s: r.human }); refreshSystem(true); refreshEvents() }
+  $('reportBtn').onclick = async () => {
+    const text = await api('/api/report?lang=' + lang)
+    try { await navigator.clipboard.writeText(text) } catch { const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove() }
+    toast(t('copied'))
+  }
+  $('techBtn').onclick = async () => { const p = $('tech'); if (p.hidden) p.textContent = (await api('/api/techlog')) || t('techEmpty'); p.hidden = !p.hidden }
+  $('pickBtn').onclick = async () => { const dir = await invoke('pick_folder').catch(() => null); if (dir) { await api('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ outDir: dir }) }); refreshSystem(true) } }
+  $('resetBtn').onclick = async () => { await api('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ outDir: '' }) }); refreshSystem(true) }
+  $('autostart').onchange = (e) => invoke('set_autostart', { on: e.target.checked }).catch(() => { e.target.checked = !e.target.checked })
+  $('updBtn').onclick = () => { $('updText').textContent = t('updating'); $('updBtn').disabled = true; invoke('app_update') }
   $('open').onclick = () => invoke('open_link', { path: '/tools/farm' })
-  $('cabBtn').onclick = () => (connected ? invoke('farm_disconnect').then(refresh) : invoke('open_link', { path: '/tools/farm#app' }))
+  $('cabBtn').onclick = () => (connected ? invoke('farm_disconnect').then(refreshApp) : invoke('open_link', { path: '/tools/farm#app' }))
   $('done').onclick = () => invoke('open_place', { place: 'done' })
-  $('clips').onclick = () => invoke('open_link', { path: `http://127.0.0.1:4747/studio/?lang=${lang}&theme=${matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'}` })
+  $('clips').onclick = () => invoke('open_link', { path: `${GEN}/studio/?lang=${lang}&theme=${matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'}` })
   $('folder').onclick = () => invoke('open_place', { place: 'data' })
-  $('restart').onclick = () => invoke('farm_restart').then(refresh)
+  $('restart').onclick = () => invoke('farm_restart').then(refreshApp)
   $('code').onclick = () => invoke('open_link', { path: 'https://github.com/tyne-pro/video-farm' })
+
+  invoke('get_autostart').then((on) => { $('autostart').checked = !!on }).catch(() => {})
+  refreshApp().then(checkUpdate)
+  refreshQueue(); refreshSystem(); refreshEvents()
+  setInterval(refreshQueue, 1000)
+  setInterval(refreshApp, 3000)
+  setInterval(refreshEvents, 3000)
+  setInterval(() => refreshSystem(), 15000)
+  setInterval(checkUpdate, 6 * 60 * 60 * 1000)
+  listen('farm-phase', refreshApp)
+  listen('farm-connected', refreshApp)
 </script>
 </body>
 </html>
