@@ -1,6 +1,6 @@
 [package]
 name = "tyne-farm"
-version = "1.6.2"
+version = "1.7.0"
 description = "Ферма роликів tyne.pro"
 authors = ["tyne.pro"]
 edition = "2021"
